@@ -96,14 +96,16 @@ function toOpenAIMessages(messages: Message[]): unknown[] {
 }
 
 async function chatOpenAI(r: Resolved, messages: Message[], tools: ToolSpec[], maxTokens: number, signal: AbortSignal): Promise<AssistantTurn> {
-  const body = {
+  const body: Record<string, unknown> = {
     model: r.model,
     temperature: 0,
     max_completion_tokens: maxTokens,
     messages: toOpenAIMessages(messages),
-    tools: tools.map((t) => ({ type: "function", function: { name: t.name, description: t.description, parameters: t.parameters } })),
-    tool_choice: "auto",
   };
+  if (tools.length > 0) {
+    body.tools = tools.map((t) => ({ type: "function", function: { name: t.name, description: t.description, parameters: t.parameters } }));
+    body.tool_choice = "auto";
+  }
   const res = await fetch(`${r.baseUrl.replace(/\/$/, "")}/chat/completions`, {
     method: "POST",
     signal,
@@ -155,14 +157,16 @@ function toAnthropicMessages(messages: Message[]): { system: string; messages: u
 
 async function chatAnthropic(r: Resolved, messages: Message[], tools: ToolSpec[], maxTokens: number, signal: AbortSignal): Promise<AssistantTurn> {
   const { system, messages: amsgs } = toAnthropicMessages(messages);
-  const body = {
+  const body: Record<string, unknown> = {
     model: r.model,
     max_tokens: maxTokens,
     temperature: 0,
     system,
     messages: amsgs,
-    tools: tools.map((t) => ({ name: t.name, description: t.description, input_schema: t.parameters })),
   };
+  if (tools.length > 0) {
+    body.tools = tools.map((t) => ({ name: t.name, description: t.description, input_schema: t.parameters }));
+  }
   const res = await fetch(`${r.baseUrl}/v1/messages`, {
     method: "POST",
     signal,
