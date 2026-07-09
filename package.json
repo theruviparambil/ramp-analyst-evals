@@ -1,0 +1,28 @@
+{
+  "name": "ramp-analyst-evals",
+  "version": "0.1.0",
+  "description": "An agentic finance analyst on Ramp's public agent-tool surface, plus the eval harness that proves it works. Fixture-first, provider-agnostic, no vendor SDKs.",
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "eval": "tsx src/eval/run.ts",
+    "demo": "tsx src/eval/run.ts --limit=6 --tag=demo",
+    "ask": "tsx src/ask.ts",
+    "ground-truth": "tsx src/fixture/print-ground-truth.ts",
+    "check-types": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@duckdb/node-api": "^1.5.4-r.1",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.21.0",
+    "typescript": "^5.6.0",
+    "vitest": "^3.0.0"
+  }
+}
