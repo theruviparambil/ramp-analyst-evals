@@ -39,6 +39,10 @@ export interface QuestionScore {
   additionalPass: boolean;
   steps: number;
   hitStepCap: boolean;
+  /** Infrastructure failure (timeout / abort / 5xx after retries) — NOT a wrong
+   * answer. Excluded from pass-rate denominators so slow models aren't penalized. */
+  infraError?: boolean;
+  errorMessage?: string;
 }
 
 export interface ScoreOptions {
@@ -110,7 +114,10 @@ async function evaluate(
 // ─── Aggregation across the whole set ─────────────────────────────────────────
 
 export interface EvalSummary {
+  /** Scored questions (infra errors excluded). */
   total: number;
+  /** Questions dropped for an infra error (timeout/abort/5xx) — reported, not scored. */
+  errored: number;
   requiredTierPassRate: number;
   additionalTierPassRate: number;
   requiredTierPassed: number;
@@ -119,7 +126,10 @@ export interface EvalSummary {
   criterionPassRates: Array<{ id: string; tier: string; nature: string; evaluated: number; passed: number; rate: number }>;
 }
 
-export function summarize(scores: QuestionScore[]): EvalSummary {
+export function summarize(allScores: QuestionScore[]): EvalSummary {
+  // Infra errors are not capability failures — drop them from the denominator.
+  const errored = allScores.filter((s) => s.infraError).length;
+  const scores = allScores.filter((s) => !s.infraError);
   const total = scores.length;
   const requiredTierPassed = scores.filter((s) => s.requiredPass).length;
   const additionalTierPassed = scores.filter((s) => s.additionalPass).length;
@@ -146,6 +156,7 @@ export function summarize(scores: QuestionScore[]): EvalSummary {
 
   return {
     total,
+    errored,
     requiredTierPassRate: total ? requiredTierPassed / total : 1,
     additionalTierPassRate: total ? additionalTierPassed / total : 1,
     requiredTierPassed,

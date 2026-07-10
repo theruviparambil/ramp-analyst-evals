@@ -65,4 +65,18 @@ describe("summarize", () => {
     const value = sum.criterionPassRates.find((c) => c.id === "req.value");
     expect(value).toMatchObject({ evaluated: 2, passed: 1 });
   });
+
+  it("excludes infra errors from the denominator (infra failure != capability failure)", async () => {
+    const good = await scoreQuestion(question, "$1.00", emptyTraj, { judge: passJudge() });
+    const infra = {
+      id: "x", question: "", expected: "", finalAnswer: "INFRA_ERROR: timeout",
+      results: [], requiredTotal: 0, requiredPassed: 0, requiredPass: false,
+      additionalTotal: 0, additionalEvaluated: 0, additionalPassed: 0, additionalPass: false,
+      steps: 0, hitStepCap: false, infraError: true, errorMessage: "timeout",
+    };
+    const sum = summarize([good, infra]);
+    expect(sum.total).toBe(1); // the errored sample is dropped, not counted as a fail
+    expect(sum.errored).toBe(1);
+    expect(sum.requiredTierPassRate).toBe(1); // 1/1 valid, not 1/2
+  });
 });

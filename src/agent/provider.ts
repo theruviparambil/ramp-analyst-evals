@@ -24,6 +24,41 @@ const env = (k: string): string | undefined => {
   return v && v.trim() ? v.trim() : undefined;
 };
 
+const envNum = (k: string): number | undefined => {
+  const v = env(k);
+  if (v === undefined) return undefined;
+  const n = Number.parseInt(v, 10);
+  return Number.isFinite(n) ? n : undefined;
+};
+
+/** Positive env override, else fallback. Exported so the timeout policy is unit-testable. */
+export function resolveTimeoutMs(envKey: string, fallback: number): number {
+  const v = envNum(envKey);
+  return v !== undefined && v > 0 ? v : fallback;
+}
+
+/**
+ * A transport-level failure. `transient` marks the retryable ones (5xx, 429):
+ * infrastructure hiccups, not the model getting the answer wrong. Timeouts and
+ * network drops are detected separately in isTransientError.
+ */
+export class TransportError extends Error {
+  constructor(message: string, readonly status: number | undefined, readonly transient: boolean) {
+    super(message);
+    this.name = "TransportError";
+  }
+}
+
+/** Should this failure be retried rather than surfaced as a (wrong) answer? */
+export function isTransientError(err: unknown): boolean {
+  if (err instanceof TransportError) return err.transient;
+  if (err instanceof Error) {
+    if (err.name === "AbortError" || err.name === "TimeoutError") return true; // our own timeout abort
+    if (/fetch failed|network|ECONNRESET|ETIMEDOUT|EAI_AGAIN|socket hang ?up|terminated/i.test(err.message)) return true;
+  }
+  return false;
+}
+
 type Transport = "openai" | "anthropic" | "bedrock";
 
 interface Resolved {
@@ -117,6 +152,10 @@ export function judgeSharesFamilyWithAgent(): boolean {
 export interface ProviderOptions {
   maxTokens?: number;
   timeoutMs?: number;
+  /** Transient-error retries (in addition to the first attempt). */
+  maxRetries?: number;
+  /** Base backoff between retries; grows linearly per attempt. */
+  backoffMs?: number;
 }
 
 export interface Usage {
@@ -132,29 +171,42 @@ export interface ProviderClient extends LLMClient {
 
 function buildClient(resolved: Resolved, opts: ProviderOptions): ProviderClient {
   const maxTokens = opts.maxTokens ?? 1200;
-  const timeoutMs = opts.timeoutMs ?? 90_000;
+  const timeoutMs = opts.timeoutMs ?? 240_000; // reasoning models are legitimately slow
+  const maxRetries = opts.maxRetries ?? 2;
+  const backoffMs = opts.backoffMs ?? 800;
   const usage: Usage = { promptTokens: 0, completionTokens: 0, calls: 0 };
+
+  const dispatch = (messages: Message[], tools: ToolSpec[], signal: AbortSignal): Promise<TransportResult> =>
+    resolved.transport === "bedrock"
+      ? chatBedrock(resolved, messages, tools, maxTokens, signal)
+      : resolved.transport === "anthropic"
+        ? chatAnthropic(resolved, messages, tools, maxTokens, signal)
+        : chatOpenAI(resolved, messages, tools, maxTokens, signal);
 
   return {
     label: `${resolved.label}:${resolved.model}`,
     usage,
     async chat(messages: Message[], tools: ToolSpec[]): Promise<AssistantTurn> {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), timeoutMs);
-      try {
-        const { turn, prompt, completion } =
-          resolved.transport === "bedrock"
-            ? await chatBedrock(resolved, messages, tools, maxTokens, controller.signal)
-            : resolved.transport === "anthropic"
-              ? await chatAnthropic(resolved, messages, tools, maxTokens, controller.signal)
-              : await chatOpenAI(resolved, messages, tools, maxTokens, controller.signal);
-        usage.promptTokens += prompt;
-        usage.completionTokens += completion;
-        usage.calls += 1;
-        return turn;
-      } finally {
-        clearTimeout(timer);
+      let lastErr: unknown;
+      // A timeout or 5xx is infrastructure, not a wrong answer: retry with backoff.
+      for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), timeoutMs);
+        try {
+          const { turn, prompt, completion } = await dispatch(messages, tools, controller.signal);
+          usage.promptTokens += prompt;
+          usage.completionTokens += completion;
+          usage.calls += 1;
+          return turn;
+        } catch (err) {
+          lastErr = err;
+          if (attempt >= maxRetries || !isTransientError(err)) throw err;
+          await new Promise((r) => setTimeout(r, backoffMs * (attempt + 1)));
+        } finally {
+          clearTimeout(timer);
+        }
       }
+      throw lastErr; // unreachable (loop returns or throws), keeps TS happy
     },
   };
 }
@@ -164,13 +216,24 @@ export function createProviderClient(opts: ProviderOptions = {}): ProviderClient
   if (!resolved) {
     throw new Error("no LLM key set — provide OPENROUTER_API_KEY, OPENAI_API_KEY, or ANTHROPIC_API_KEY (see .env.example)");
   }
-  return buildClient(resolved, opts);
+  return buildClient(resolved, {
+    ...opts,
+    timeoutMs: opts.timeoutMs ?? resolveTimeoutMs("AGENT_TIMEOUT_MS", 240_000),
+    maxRetries: opts.maxRetries ?? envNum("AGENT_MAX_RETRIES"),
+    backoffMs: opts.backoffMs ?? envNum("AGENT_RETRY_BACKOFF_MS"),
+  });
 }
 
 /** The judge client — a separate model (and optionally a separate provider). Null if no key. */
 export function createJudgeClient(opts: ProviderOptions = {}): ProviderClient | null {
   const resolved = resolveJudgeModel();
-  return resolved ? buildClient(resolved, opts) : null;
+  if (!resolved) return null;
+  return buildClient(resolved, {
+    ...opts,
+    timeoutMs: opts.timeoutMs ?? resolveTimeoutMs("JUDGE_TIMEOUT_MS", 240_000),
+    maxRetries: opts.maxRetries ?? envNum("JUDGE_MAX_RETRIES"),
+    backoffMs: opts.backoffMs ?? envNum("JUDGE_RETRY_BACKOFF_MS"),
+  });
 }
 
 interface TransportResult {
@@ -227,7 +290,7 @@ async function chatOpenAI(r: Resolved, messages: Message[], tools: ToolSpec[], m
     headers: { "content-type": "application/json", authorization: `Bearer ${r.apiKey}` },
     body: JSON.stringify(body),
   });
-  if (!res.ok) throw new Error(`openai ${res.status}: ${(await res.text()).slice(0, 300)}`);
+  if (!res.ok) throw new TransportError(`openai ${res.status}: ${(await res.text()).slice(0, 300)}`, res.status, res.status >= 500 || res.status === 429);
   const json = (await res.json()) as {
     choices?: Array<{ message?: { content?: string | null; tool_calls?: Array<{ id: string; function: { name: string; arguments: string } }> } }>;
     usage?: { prompt_tokens?: number; completion_tokens?: number };
@@ -293,7 +356,7 @@ async function chatAnthropic(r: Resolved, messages: Message[], tools: ToolSpec[]
     headers: { "content-type": "application/json", "x-api-key": r.apiKey, "anthropic-version": "2023-06-01" },
     body: JSON.stringify(body),
   });
-  if (!res.ok) throw new Error(`anthropic ${res.status}: ${(await res.text()).slice(0, 300)}`);
+  if (!res.ok) throw new TransportError(`anthropic ${res.status}: ${(await res.text()).slice(0, 300)}`, res.status, res.status >= 500 || res.status === 429);
   const json = (await res.json()) as {
     content?: Array<{ type: string; text?: string; id?: string; name?: string; input?: Record<string, unknown> }>;
     usage?: { input_tokens?: number; output_tokens?: number };
@@ -368,7 +431,7 @@ async function chatBedrock(r: Resolved, messages: Message[], tools: ToolSpec[], 
     headers: { "content-type": "application/json", authorization: `Bearer ${r.apiKey}` },
     body: JSON.stringify(toBedrockRequest(messages, maxTokens, tools)),
   });
-  if (!res.ok) throw new Error(`bedrock ${res.status}: ${(await res.text()).slice(0, 300)}`);
+  if (!res.ok) throw new TransportError(`bedrock ${res.status}: ${(await res.text()).slice(0, 300)}`, res.status, res.status >= 500 || res.status === 429);
   const json = (await res.json()) as {
     output?: { message?: { content?: Array<{ text?: string; toolUse?: { toolUseId: string; name: string; input?: Record<string, unknown> } }> } };
     usage?: { inputTokens?: number; outputTokens?: number };

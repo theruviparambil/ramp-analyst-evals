@@ -20,7 +20,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { runAgent } from "../agent/agent.js";
-import { createJudgeClient, createProviderClient, judgeSharesFamilyWithAgent, resolveAgentModel, type ProviderClient } from "../agent/provider.js";
+import { createJudgeClient, createProviderClient, judgeSharesFamilyWithAgent, resolveAgentModel, resolveTimeoutMs, type ProviderClient } from "../agent/provider.js";
 import { selectBackend } from "../ramp/backend.js";
 import { GOLDEN } from "./golden.js";
 import { agentPrompt, type GoldenQuestion } from "./spec.js";
@@ -71,12 +71,16 @@ async function runSample(agent: LLMClient, judge: LLMClient | undefined, questio
       transcripts.push(renderTranscript(q.question, trajectory, finalAnswer));
       if (!quiet) console.log(`required ${score.requiredPassed}/${score.requiredTotal} ${score.requiredPass ? "PASS" : "FAIL"}, additional ${score.additionalPassed}/${score.additionalEvaluated}  (${trajectory.steps.length} calls, ${((Date.now() - t0) / 1000).toFixed(1)}s)`);
     } catch (err) {
-      if (!quiet) console.log(`ERROR: ${(err as Error).message}`);
+      // A throw means we never got an answer to grade — infrastructure, not a
+      // wrong answer. Flag it as an infra error so summarize() excludes it from
+      // the pass-rate denominator instead of scoring it as a capability failure.
+      const message = err instanceof Error ? err.message : String(err);
+      if (!quiet) console.log(`INFRA ERROR (excluded from scoring): ${message}`);
       scores.push({
-        id: q.id, question: q.question, expected: q.expected, finalAnswer: `ERROR: ${(err as Error).message}`,
+        id: q.id, question: q.question, expected: q.expected, finalAnswer: `INFRA_ERROR: ${message}`,
         results: [], requiredTotal: 0, requiredPassed: 0, requiredPass: false,
         additionalTotal: 0, additionalEvaluated: 0, additionalPassed: 0, additionalPass: false,
-        steps: 0, hitStepCap: false,
+        steps: 0, hitStepCap: false, infraError: true, errorMessage: message,
       });
     }
   }
@@ -127,22 +131,26 @@ async function main(): Promise<void> {
   const allScores = samples.flatMap((s) => s.scores);
   const mergedSummary = summarize(allScores);
 
-  // Per-question pass frequency across samples (informative under sampling).
+  // Per-question pass frequency across samples, over VALID (non-infra-error) runs.
   const last = samples[samples.length - 1]!;
   const perQuestion = questions.map((q) => {
     const runs = samples.map((s) => s.scores.find((x) => x.id === q.id)!);
-    return { id: q.id, samples: args.samples, requiredPass: runs.filter((r) => r.requiredPass).length, additionalPass: runs.filter((r) => r.additionalPass).length };
+    const valid = runs.filter((r) => !r.infraError);
+    return { id: q.id, samples: valid.length, errored: runs.length - valid.length, requiredPass: valid.filter((r) => r.requiredPass).length, additionalPass: valid.filter((r) => r.additionalPass).length };
   });
+  const erroredTotal = mergedSummary.errored;
 
   if (args.samples > 1) {
-    console.log("Per-question pass frequency (over samples):");
-    for (const p of perQuestion) console.log(`  ${p.id.padEnd(24)} required ${p.requiredPass}/${p.samples}   additional ${p.additionalPass}/${p.samples}`);
+    console.log("Per-question pass frequency (over valid samples):");
+    for (const p of perQuestion) console.log(`  ${p.id.padEnd(24)} required ${p.requiredPass}/${p.samples}   additional ${p.additionalPass}/${p.samples}${p.errored ? `   (${p.errored} infra-error, excluded)` : ""}`);
     console.log("");
     console.log("Across samples:");
     console.log(`  REQUIRED tier:   ${pct(meanRequired)} mean  (range ${pct(Math.min(...reqRates))}–${pct(Math.max(...reqRates))} over ${args.samples})`);
-    console.log(`  ADDITIONAL tier: ${pct(meanAdditional)} mean  (range ${pct(Math.min(...addRates))}–${pct(Math.max(...addRates))} over ${args.samples})\n`);
+    console.log(`  ADDITIONAL tier: ${pct(meanAdditional)} mean  (range ${pct(Math.min(...addRates))}–${pct(Math.max(...addRates))} over ${args.samples})`);
+    console.log(`  Infra errors excluded: ${erroredTotal} of ${samples.length * questions.length} runs${erroredTotal ? " — raise AGENT_TIMEOUT_MS and re-run for a clean result" : ""}\n`);
   } else {
     console.log("\n" + renderTable(last.scores, last.summary) + "\n");
+    if (erroredTotal) console.log(`Infra errors excluded: ${erroredTotal}\n`);
   }
   console.log(renderCriterionBreakdown(mergedSummary) + "\n");
 
@@ -167,6 +175,7 @@ async function main(): Promise<void> {
   const meta = {
     startedAt: new Date().toISOString(), model: agent.label, judge: judge?.label ?? null, judgeSharesFamily: judge ? judgeSharesFamilyWithAgent() : null,
     tag: args.tag, requiredBar: args.requiredBar, samples: args.samples,
+    infraErrorsExcluded: erroredTotal, agentTimeoutMs: resolveTimeoutMs("AGENT_TIMEOUT_MS", 240_000),
     requiredTier: { mean: meanRequired, min: Math.min(...reqRates), max: Math.max(...reqRates), perSample: reqRates },
     additionalTier: { mean: meanAdditional, min: Math.min(...addRates), max: Math.max(...addRates), perSample: addRates },
     perQuestion,
