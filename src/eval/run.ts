@@ -104,8 +104,8 @@ async function main(): Promise<void> {
   console.log(`  agent: ${agent.label}`);
   if (judge) {
     const shared = judgeSharesFamilyWithAgent();
-    console.log(`  judge: ${judge.label}  [${shared ? "SAME provider family as agent — self-preference risk; additional tier is non-gating" : "independent provider"}]`);
-    console.log(`         (set JUDGE_API_KEY to a different vendor for a true cross-family judge)`);
+    console.log(`  judge: ${judge.label}  [${shared ? "SAME provider family as agent — self-preference risk; additional tier is non-gating" : "cross-family / independent provider"}]`);
+    if (shared) console.log(`         (set JUDGE_TRANSPORT=bedrock + AWS_BEARER_TOKEN_BEDROCK for a cross-family Claude judge)`);
   } else {
     console.log(`  judge: disabled`);
   }

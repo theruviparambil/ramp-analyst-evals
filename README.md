@@ -23,7 +23,7 @@ OpenAI key, `RAMP_MODE=fixture`.
 | **REQUIRED tier** (the SLA) | **85% mean**, range **75–92%** over 5 runs |
 | **ADDITIONAL tier** (headroom) | **47% mean**, range **33–58%** |
 | Cost | ≈ **$1.20** — 271 API calls, 707,855 prompt + 31,856 completion tokens |
-| Offline tests (CI) | **76 passing**, keyless |
+| Offline tests (CI) | **82 passing**, keyless |
 | Eval gate @ REQUIRED ≥ 0.9 | **fails at 85%** — on purpose (see below) |
 
 Per-question, how often each tier fully passed across the 5 runs:
@@ -82,7 +82,7 @@ Reproduce the whole scoring machinery with no key in ~30 seconds:
 
 ```bash
 npm install
-npm test              # 76 tests, fully offline (scripted model + real DuckDB)
+npm test              # 82 tests, fully offline (scripted model + real DuckDB)
 npm run ground-truth  # print the planted patterns and their exact values
 ```
 
@@ -180,16 +180,21 @@ real observed behavior.
 with a range (`--samples=5`). A single number that swings ±8 points between runs
 isn't a measurement.
 
-**A judge you don't over-trust.** Answer faithfulness is scored by a *separate* model
-(`JUDGE_MODEL`, default a different model than the agent) on the non-gating
-ADDITIONAL tier only. The committed run used a same-provider judge (`gpt-4.1`
-grading `gpt-5.1`) — a known self-preference limitation, which is exactly why that
-tier never gates. `JUDGE_API_KEY=<another vendor>` runs a true cross-family judge in
-one env var. The full judge-validation method — proving a grader with inter-rater
-agreement (Cohen's / Fleiss' κ) instead of accuracy — lives in the companion repo,
-[veriva-eval](https://github.com/theruviparambil/veriva-eval).
+**A judge you don't over-trust — and can swap for a different family.** Answer
+faithfulness is scored by a *separate* model on the non-gating ADDITIONAL tier
+only. The repo ships three judge transports — OpenAI, Anthropic, and **AWS Bedrock**
+(the Converse API over a Bearer token, no SDK) — so the judge can be a genuinely
+different family from the agent in one env var:
+`JUDGE_TRANSPORT=bedrock JUDGE_MODEL=us.anthropic.claude-sonnet-4-6`. The committed
+run's faithfulness verdicts came from `gpt-4.1`; re-scoring the exact same `gpt-5.1`
+answers with **cross-family Claude Sonnet 4.6 on Bedrock** returns *identical*
+verdicts — 12/12 agreement, the same 10/12 faithful, the same two fails (q04, q06).
+So on this set judge family doesn't move the tier, which is reassuring and part of
+why it never gates. The full judge-validation method — proving a grader with
+inter-rater agreement (Cohen's / Fleiss' κ) instead of accuracy — lives in the
+companion repo, [veriva-eval](https://github.com/theruviparambil/veriva-eval).
 
-**Two gates, kept honest.** The 76 offline tests are the CI gate — they run keyless
+**Two gates, kept honest.** The 82 offline tests are the CI gate — they run keyless
 on every push ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)). The *eval*
 gate is the `process.exit` in `npm run eval`; it needs a key because it has to
 generate real trajectories, so it runs on demand, not in CI.
@@ -279,7 +284,8 @@ src/
     fixture-backend.ts    schema-faithful tool surface + docs_required handshake
     live-backend.ts       Ramp MCP seam (documented stub)
   agent/
-    provider.ts           fetch tool-calling (agent + separate judge), usage capture
+    provider.ts           fetch tool-calling; agent (openai/anthropic) + judge
+                          (openai/anthropic/bedrock), usage capture
     scripted.ts           offline test double
     agent.ts / system-prompt.ts   the read-only, self-correcting loop
   eval/
