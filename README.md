@@ -185,7 +185,7 @@ handshake: the agent reads the catalog and domain docs *before* it writes SQL,
 because the tool surface returns `docs_required` otherwise, the same prerequisite
 Ramp's Core enforces.
 
-```
+````
 Q: Which vendor did we spend the most with in Q2, and how much?
 
 1. get_analyst_catalog
@@ -213,7 +213,7 @@ Answer:
    ```json
    {"top_vendor": {"name": "Google Ads", "spend_usd": 42500}}
    ```
-```
+````
 
 That answer clears every REQUIRED criterion (structured value, read-only,
 grounded) and the reasoning-path checks. The ADDITIONAL tier is where the headroom
