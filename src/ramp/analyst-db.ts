@@ -161,9 +161,12 @@ export class AnalystArtifact {
 
 function inferFormat(name: string, typeId: string): QueryColumn["format"] {
   const n = name.toLowerCase();
-  if (/amount|spend|total|sum|cost|net|gross|balance/.test(n)) return "money";
+  // Exclusions first: identifiers and labels are never money, even when their
+  // name contains a money-ish token (e.g. spend_event_uuid, spend_program).
+  if (/uuid|_name$|^name$|category|status|program|currency|email|role|vendor|merchant$|department$|user$/.test(n)) return "text";
   if (/date/.test(n)) return "date";
-  if (/count|_id\b|num_|_count/.test(n)) return "number";
+  if (/_id$|_id\b|count|num_/.test(n)) return "number";
+  if (/amount|spend|total|sum|cost|net|gross|balance|revenue|average|avg/.test(n)) return "money";
   if (/DECIMAL|DOUBLE|FLOAT/i.test(typeId)) return "money";
   if (/INT|BIGINT/i.test(typeId)) return "number";
   return "text";

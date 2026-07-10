@@ -104,9 +104,35 @@ describe("wire money formats", () => {
     expect(res.vendors.map((v) => v.name).sort()).toEqual(["Delta Air Lines", "Delta Airlines"]);
   });
 
-  it("answer_policy_question returns the meals cap", async () => {
+  it("answer_policy_question returns the meals cap for a meals question", async () => {
     const b = createFixtureBackend();
     const res = (await b.call("answer_policy_question", { question: "what is the limit on client dinners?", rationale: "policy" })).data as { answer: string };
     expect(res.answer).toMatch(/\$500/);
+  });
+
+  it("answer_policy_question is not hijacked by a generic word (meals over flights)", async () => {
+    const b = createFixtureBackend();
+    // Mentions 'travel' but is clearly about a meal — must resolve to the meals policy.
+    const res = (await b.call("answer_policy_question", { question: "on a business travel trip, is a $6,750 client dinner within meal policy?", rationale: "policy" })).data as { answer: string };
+    expect(res.answer).toMatch(/\$500/);
+    expect(res.answer.toLowerCase()).toContain("meal");
+  });
+});
+
+describe("column format inference", () => {
+  it("classifies money columns as money and identifier columns as text/number", async () => {
+    const b = createFixtureBackend();
+    await b.call("get_analyst_catalog", { rationale: "d" });
+    await b.call("get_analyst_spend_facts_domain_docs", { rationale: "d" });
+    const res = (await b.call("execute_analyst_query", {
+      sql: "SELECT sf.spend_event_uuid, sf.spend_event_id, sf.amount, sf.spend_program, sf.transaction_date FROM analyst.spend_facts sf LIMIT 1",
+      rationale: "inspect column formats",
+    })).data as { columns: Array<{ key: string; format: string }> };
+    const fmt = Object.fromEntries(res.columns.map((c) => [c.key, c.format]));
+    expect(fmt.spend_event_uuid).toBe("text"); // was wrongly "money" (regex matched 'spend')
+    expect(fmt.spend_program).toBe("text");
+    expect(fmt.spend_event_id).toBe("number");
+    expect(fmt.amount).toBe("money");
+    expect(fmt.transaction_date).toBe("date");
   });
 });

@@ -476,7 +476,7 @@ export const POLICY_KB: PolicyEntry[] = [
       "Meals & Entertainment are reimbursable up to $75 per person. Any single transaction above $500 requires prior manager approval; without it the charge is flagged out-of-policy. Alcohol is reimbursable only as part of a client meal.",
   },
   {
-    keywords: ["flight", "flights", "air", "airfare", "travel", "airline"],
+    keywords: ["flight", "flights", "airfare", "airline", "airlines"],
     answer:
       "Domestic flights must be booked in economy. Flights over 6 hours may be premium economy with manager approval; business class requires VP approval. Book through the Ramp travel tool when possible.",
   },

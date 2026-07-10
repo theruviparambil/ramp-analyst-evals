@@ -217,7 +217,13 @@ class FixtureBackend implements RampToolSurface {
 
   private answerPolicy(args: Record<string, unknown>): ToolResult {
     const question = (args.question as string).toLowerCase();
-    const entry = POLICY_KB.find((e) => e.keywords.some((k) => question.includes(k)));
+    // Score by number of keyword hits and take the best match, so a meals
+    // question ("client dinner over the limit?") isn't hijacked by a generic
+    // word appearing in another policy. Ties break toward KB order.
+    const ranked = POLICY_KB.map((e) => ({ e, score: e.keywords.filter((k) => question.includes(k)).length }))
+      .filter((x) => x.score > 0)
+      .sort((a, b) => b.score - a.score);
+    const entry = ranked[0]?.e;
     const answer =
       entry?.answer ??
       "No specific policy rule matched. General guidance: business expenses must have a clear business purpose, a receipt, and stay within category limits; anything unusual should be pre-approved by a manager.";

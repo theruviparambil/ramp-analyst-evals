@@ -120,7 +120,7 @@ export const GOLDEN: GoldenQuestion[] = [
       ...baseRequired("execute_analyst_query"),
       det("req.merchant", "required", `Identifies the ${GT.outOfPolicy[0]!.merchant_name} charge`, (c) => answerMentionsAll(c, [GT.outOfPolicy[0]!.merchant_name])),
       det("req.value", "required", `Amount = ${fmt(GT.outOfPolicy[0]!.amount_cents)}`, (c) => answerContainsAmount(c, GT.outOfPolicy[0]!.amount_cents)),
-      det("add.policy_cited", "additional", "Cites the policy reason ($500 meals cap)", (c) => answerMentionsAny(c, ["policy", "$500", "500", "limit", "cap", "approval"])),
+      det("add.policy_cited", "additional", "Cites the actual $500 meals cap value", (c) => answerMentionsAny(c, ["$500", "500"])),
       ...baseAdditional(true),
       judged("add.faithful", "additional", "Explained the violation", `The answer identifies the ${GT.outOfPolicy[0]!.merchant_name} dinner of ${fmt(GT.outOfPolicy[0]!.amount_cents)} as out-of-policy and explains it breaches the meals policy (single transactions over $500 need approval).`),
     ],
