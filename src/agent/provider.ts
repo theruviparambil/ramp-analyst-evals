@@ -1,14 +1,18 @@
 /**
  * Provider-agnostic LLM client with tool-calling — built on `fetch`, no vendor
- * SDKs (mirroring veriva-eval's zero-SDK ethos). Two transports cover the field:
+ * SDKs (mirroring veriva-eval's zero-SDK ethos). Three transports cover the field:
  *
  *   - openai:    OpenAI-compatible /chat/completions with `tools` (also serves
  *                OpenRouter, and any OpenAI-compatible gateway).
  *   - anthropic: the Anthropic Messages API with `tools` / tool_use blocks.
+ *   - bedrock:   AWS Bedrock Converse API, text-in/text-out (JUDGE only — no
+ *                tool-calling). Auth is a Bearer token, so it still fits the
+ *                no-SDK fetch ethos. This is what lets the judge be a genuinely
+ *                cross-FAMILY model (Claude judging GPT).
  *
- * The model is resolved from whichever API key is present, precedence
+ * The agent model is resolved from whichever API key is present, precedence
  * OPENROUTER > OPENAI > ANTHROPIC, with AGENT_MODEL as an override. Tests never
- * touch this file — they use the scripted client.
+ * touch the network — they use the scripted client, or a mocked fetch.
  */
 
 import type { AssistantTurn, LLMClient, Message, ToolCallRequest, ToolSpec } from "./types.js";
@@ -18,7 +22,7 @@ const env = (k: string): string | undefined => {
   return v && v.trim() ? v.trim() : undefined;
 };
 
-type Transport = "openai" | "anthropic";
+type Transport = "openai" | "anthropic" | "bedrock";
 
 interface Resolved {
   transport: Transport;
@@ -53,19 +57,34 @@ function differentFromAgent(agentModel: string): string {
 
 /**
  * Resolve the JUDGE model. One-env-var swap for a truly independent judge:
+ *   - JUDGE_TRANSPORT=bedrock runs the judge on AWS Bedrock (Converse API) with
+ *     AWS_BEARER_TOKEN_BEDROCK — a real cross-FAMILY judge (e.g. Claude judging
+ *     GPT). JUDGE_MODEL defaults to the cross-region inference profile
+ *     `us.anthropic.claude-sonnet-4-6` (the `us.` prefix is required).
  *   - JUDGE_API_KEY (+ optional JUDGE_TRANSPORT=anthropic, JUDGE_BASE_URL) runs
- *     the judge on a SEPARATE provider — set an Anthropic/other key here for a
- *     real cross-FAMILY judge panel.
+ *     the judge on a separate OpenAI-compatible or Anthropic provider.
  *   - Otherwise the judge reuses the agent's key/provider but defaults to a
  *     DIFFERENT model than the agent (self-preference mitigation, not removal).
- *   - JUDGE_MODEL overrides the model id in either case.
+ *   - JUDGE_MODEL overrides the model id in every case.
  * Returns null if no key at all.
  */
 export function resolveJudgeModel(): Resolved | null {
   const judgeModel = env("JUDGE_MODEL");
+  const transportEnv = env("JUDGE_TRANSPORT");
+  if (transportEnv === "bedrock") {
+    const key = env("AWS_BEARER_TOKEN_BEDROCK") ?? env("JUDGE_API_KEY");
+    if (!key) return null;
+    return {
+      transport: "bedrock",
+      model: judgeModel ?? "us.anthropic.claude-sonnet-4-6",
+      apiKey: key,
+      baseUrl: env("JUDGE_BASE_URL") ?? "https://bedrock-runtime.us-east-1.amazonaws.com",
+      label: "bedrock",
+    };
+  }
   const judgeKey = env("JUDGE_API_KEY");
   if (judgeKey) {
-    const transport: Transport = env("JUDGE_TRANSPORT") === "anthropic" ? "anthropic" : "openai";
+    const transport: Transport = transportEnv === "anthropic" ? "anthropic" : "openai";
     const baseUrl = env("JUDGE_BASE_URL") ?? (transport === "anthropic" ? "https://api.anthropic.com" : "https://api.openai.com/v1");
     return { transport, model: judgeModel ?? (transport === "anthropic" ? "claude-sonnet-4-6" : "gpt-4.1"), apiKey: judgeKey, baseUrl, label: "judge" };
   }
@@ -110,9 +129,12 @@ function buildClient(resolved: Resolved, opts: ProviderOptions): ProviderClient 
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), timeoutMs);
       try {
-        const { turn, prompt, completion } = resolved.transport === "anthropic"
-          ? await chatAnthropic(resolved, messages, tools, maxTokens, controller.signal)
-          : await chatOpenAI(resolved, messages, tools, maxTokens, controller.signal);
+        const { turn, prompt, completion } =
+          resolved.transport === "bedrock"
+            ? await chatBedrock(resolved, messages, maxTokens, controller.signal)
+            : resolved.transport === "anthropic"
+              ? await chatAnthropic(resolved, messages, tools, maxTokens, controller.signal)
+              : await chatOpenAI(resolved, messages, tools, maxTokens, controller.signal);
         usage.promptTokens += prompt;
         usage.completionTokens += completion;
         usage.calls += 1;
@@ -273,6 +295,53 @@ async function chatAnthropic(r: Resolved, messages: Message[], tools: ToolSpec[]
     prompt: json.usage?.input_tokens ?? 0,
     completion: json.usage?.output_tokens ?? 0,
   };
+}
+
+// ─── AWS Bedrock Converse transport (JUDGE only, text-in/text-out) ─────────────
+
+export interface BedrockRequestBody {
+  messages: Array<{ role: "user" | "assistant"; content: Array<{ text: string }> }>;
+  system?: Array<{ text: string }>;
+  inferenceConfig: { maxTokens: number };
+}
+
+/**
+ * Map normalized messages into the Bedrock Converse shape: `content` is an ARRAY
+ * of `{text}` blocks, `system` is a TOP-LEVEL array (not a message), and no
+ * temperature is sent (reasoning models reject non-default). Exported for tests.
+ */
+export function toBedrockRequest(messages: Message[], maxTokens: number): BedrockRequestBody {
+  const systemParts: string[] = [];
+  const out: BedrockRequestBody["messages"] = [];
+  for (const m of messages) {
+    if (m.role === "system") systemParts.push(m.content);
+    else if (m.role === "user") out.push({ role: "user", content: [{ text: m.content }] });
+    else if (m.role === "assistant") {
+      if (m.text) out.push({ role: "assistant", content: [{ text: m.text }] });
+    } else {
+      out.push({ role: "user", content: [{ text: m.content }] }); // tool results as user text (judge has none)
+    }
+  }
+  const body: BedrockRequestBody = { messages: out, inferenceConfig: { maxTokens } };
+  if (systemParts.length) body.system = systemParts.map((t) => ({ text: t }));
+  return body;
+}
+
+async function chatBedrock(r: Resolved, messages: Message[], maxTokens: number, signal: AbortSignal): Promise<TransportResult> {
+  const url = `${r.baseUrl.replace(/\/$/, "")}/model/${r.model}/converse`;
+  const res = await fetch(url, {
+    method: "POST",
+    signal,
+    headers: { "content-type": "application/json", authorization: `Bearer ${r.apiKey}` },
+    body: JSON.stringify(toBedrockRequest(messages, maxTokens)),
+  });
+  if (!res.ok) throw new Error(`bedrock ${res.status}: ${(await res.text()).slice(0, 300)}`);
+  const json = (await res.json()) as {
+    output?: { message?: { content?: Array<{ text?: string }> } };
+    usage?: { inputTokens?: number; outputTokens?: number };
+  };
+  const text = (json.output?.message?.content ?? []).map((b) => b.text ?? "").join("").trim();
+  return { turn: { text, toolCalls: [] }, prompt: json.usage?.inputTokens ?? 0, completion: json.usage?.outputTokens ?? 0 };
 }
 
 function safeJson(s: string): Record<string, unknown> {
