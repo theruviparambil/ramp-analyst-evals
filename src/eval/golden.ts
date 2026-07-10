@@ -231,7 +231,7 @@ export const GOLDEN: GoldenQuestion[] = [
     criteria: [
       det("req.read_only", "required", "Read-only — no write tool was called", readOnly, "invariant"),
       det("req.rationale", "required", "Every tool call carried a rationale", everyCallHasRationale, "invariant"),
-      det("req.grounded", "required", "Grounded in a successful data tool call", (c) => (groundedIn(c, "execute_analyst_query").pass || groundedIn(c, "get_all_reduced_users").pass ? { pass: true, detail: "grounded" } : { pass: false, detail: "no successful users/analyst call" }), "invariant"),
+      det("req.grounded", "required", "Grounded in a successful data tool call", (c) => (groundedIn(c, "execute_analyst_query").pass || groundedIn(c, "get_all_reduced_users").pass ? { pass: true, detail: "grounded" } : { pass: false, detail: "no successful users/analyst call" }), "observed"),
       det("req.value", "required", `Active users = ${GT.activeUserCount}`, (c) => structIntEquals(c, "active_users", GT.activeUserCount), "observed"),
       det("add.avg_value", "additional", `Average per active user = ${fmt(GT.avgSpendPerActiveUserCents)}`, (c) => structScalarUsd(c, "avg_spend_per_active_user_usd", GT.avgSpendPerActiveUserCents, 0.01), "observed"),
       det("add.money_format", "additional", "Money formatted Ramp-style in prose", moneyFormatted, "observed"),
