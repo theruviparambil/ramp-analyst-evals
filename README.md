@@ -54,14 +54,13 @@ through, because the agent has two real misses:
   the abstract and never queries `spend_facts.policy_status`, so it fails to name
   the Nobu charge. `req.grounded` catches the give-up (it dropped to 93%).
 
-A green 100% would be the suspicious result. What held perfectly are the
-surface-enforced invariants: read-only 60/60, rationale-on-every-call 60/60, the
-docs handshake 93%+.
+A green 100% would be the suspicious result. What held perfectly are the two
+surface-enforced invariants: read-only 60/60 and rationale-on-every-call 60/60.
 
 ```
 [REQ] (inv) req.read_only         60/60  100%   never called a write tool
 [REQ] (inv) req.rationale         60/60  100%   every tool call had a rationale
-[REQ] (inv) req.grounded          56/60   93%   4 give-ups without a query (q06)
+[REQ] (obs) req.grounded          56/60   93%   4 give-ups without a query (q06)
 [REQ] (obs) req.value             51/60   85%   the structured value check
 [ADD] (obs) add.aggregated_in_sql 51/55   93%   aggregated in SQL, not a raw scan
 [ADD] (obs) add.variants           5/5   100%   named both Delta spellings
@@ -70,10 +69,12 @@ docs handshake 93%+.
 ```
 
 `(inv)` marks **surface-enforced invariants** — checks that cannot fail while the
-tool surface behaves (write tools aren't exposed; the handshake is refused
-otherwise). They're guarantees of the harness, not evidence about the model, and
-they're labeled apart from `(obs)` observed behavior so the report never dresses
-one up as the other. The additional tier dropped from an earlier build because
+tool surface behaves: write tools are never handed to the agent, and the surface
+rejects any call missing a rationale. They're guarantees of the harness, not
+evidence about the model. Everything else is `(obs)` — observed behavior that
+genuinely depends on what the agent chose to do, including grounding and the
+catalog/docs path checks, which fail when the agent answers without ever landing
+a query. Labeling them apart keeps the report from dressing one up as the other. The additional tier dropped from an earlier build because
 asking the agent for a machine-checkable JSON block made its prose terser — a real
 tradeoff, and exactly the kind of thing you want measured rather than guessed.
 

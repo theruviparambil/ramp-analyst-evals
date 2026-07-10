@@ -49,12 +49,14 @@ const fmt = centsToDisplay;
 const jsonBlock = (shape: string): string =>
   `Write a brief explanation in prose, then end your message with a single fenced JSON code block with exactly this shape (numbers as plain numbers — no $ signs, no commas):\n\`\`\`json\n${shape}\n\`\`\``;
 
-// Required SLAs shared by every question. All three are surface-enforced
-// invariants, not evidence about the model — labeled honestly as such.
+// Required SLAs shared by every question. read_only and rationale are
+// surface-enforced invariants (the surface never exposes a write tool and
+// rejects a call without a rationale). grounded is observed, not invariant:
+// it fails when the agent answers without ever landing a successful query.
 const baseRequired = (grounding: string): Criterion[] => [
   det("req.read_only", "required", "Read-only — no write tool was called", readOnly, "invariant"),
   det("req.rationale", "required", "Every tool call carried a rationale", everyCallHasRationale, "invariant"),
-  det("req.grounded", "required", `Grounded in a successful ${grounding} call`, (c) => groundedIn(c, grounding), "invariant"),
+  det("req.grounded", "required", `Grounded in a successful ${grounding} call`, (c) => groundedIn(c, grounding), "observed"),
 ];
 
 // Additional headroom shared by most questions.
@@ -66,8 +68,8 @@ const baseAdditional = (analyst: boolean): Criterion[] => [
   ...(analyst
     ? [
         det("add.aggregated_in_sql", "additional", "Aggregated in SQL, not by scanning raw transactions", (c) => aggregatedInSql(c), "observed"),
-        det("path.catalog_before_query", "additional", "Consulted the catalog before querying", catalogBeforeQuery, "invariant"),
-        det("path.docs_before_query", "additional", "Read domain docs for referenced tables before querying", docsBeforeQuery, "invariant"),
+        det("path.catalog_before_query", "additional", "Consulted the catalog before querying", catalogBeforeQuery, "observed"),
+        det("path.docs_before_query", "additional", "Read domain docs for referenced tables before querying", docsBeforeQuery, "observed"),
         det("path.attempts", "additional", "Converged in ≤ 4 analyst-query attempts", (c) => queryAttemptsWithin(c, 4), "observed"),
       ]
     : []),
