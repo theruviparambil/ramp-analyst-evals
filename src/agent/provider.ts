@@ -43,6 +43,45 @@ export function resolveAgentModel(): Resolved | null {
   return null;
 }
 
+/** A model deliberately different from the agent's, to blunt (not remove) self-preference. */
+function differentFromAgent(agentModel: string): string {
+  if (/gpt-5/i.test(agentModel)) return "gpt-4.1";
+  if (/gpt-4/i.test(agentModel)) return "gpt-4.1-mini";
+  if (/claude/i.test(agentModel)) return "claude-3-5-haiku-latest";
+  return agentModel;
+}
+
+/**
+ * Resolve the JUDGE model. One-env-var swap for a truly independent judge:
+ *   - JUDGE_API_KEY (+ optional JUDGE_TRANSPORT=anthropic, JUDGE_BASE_URL) runs
+ *     the judge on a SEPARATE provider — set an Anthropic/other key here for a
+ *     real cross-FAMILY judge panel.
+ *   - Otherwise the judge reuses the agent's key/provider but defaults to a
+ *     DIFFERENT model than the agent (self-preference mitigation, not removal).
+ *   - JUDGE_MODEL overrides the model id in either case.
+ * Returns null if no key at all.
+ */
+export function resolveJudgeModel(): Resolved | null {
+  const judgeModel = env("JUDGE_MODEL");
+  const judgeKey = env("JUDGE_API_KEY");
+  if (judgeKey) {
+    const transport: Transport = env("JUDGE_TRANSPORT") === "anthropic" ? "anthropic" : "openai";
+    const baseUrl = env("JUDGE_BASE_URL") ?? (transport === "anthropic" ? "https://api.anthropic.com" : "https://api.openai.com/v1");
+    return { transport, model: judgeModel ?? (transport === "anthropic" ? "claude-sonnet-4-6" : "gpt-4.1"), apiKey: judgeKey, baseUrl, label: "judge" };
+  }
+  const agent = resolveAgentModel();
+  if (!agent) return null;
+  return { ...agent, model: judgeModel ?? differentFromAgent(agent.model), label: "judge" };
+}
+
+/** Whether the judge shares the agent's provider family (self-preference risk). */
+export function judgeSharesFamilyWithAgent(): boolean {
+  const a = resolveAgentModel();
+  const j = resolveJudgeModel();
+  if (!a || !j) return false;
+  return a.transport === j.transport && a.baseUrl === j.baseUrl;
+}
+
 export interface ProviderOptions {
   maxTokens?: number;
   timeoutMs?: number;
@@ -59,11 +98,7 @@ export interface ProviderClient extends LLMClient {
   readonly usage: Usage;
 }
 
-export function createProviderClient(opts: ProviderOptions = {}): ProviderClient {
-  const resolved = resolveAgentModel();
-  if (!resolved) {
-    throw new Error("no LLM key set — provide OPENROUTER_API_KEY, OPENAI_API_KEY, or ANTHROPIC_API_KEY (see .env.example)");
-  }
+function buildClient(resolved: Resolved, opts: ProviderOptions): ProviderClient {
   const maxTokens = opts.maxTokens ?? 1200;
   const timeoutMs = opts.timeoutMs ?? 90_000;
   const usage: Usage = { promptTokens: 0, completionTokens: 0, calls: 0 };
@@ -87,6 +122,20 @@ export function createProviderClient(opts: ProviderOptions = {}): ProviderClient
       }
     },
   };
+}
+
+export function createProviderClient(opts: ProviderOptions = {}): ProviderClient {
+  const resolved = resolveAgentModel();
+  if (!resolved) {
+    throw new Error("no LLM key set — provide OPENROUTER_API_KEY, OPENAI_API_KEY, or ANTHROPIC_API_KEY (see .env.example)");
+  }
+  return buildClient(resolved, opts);
+}
+
+/** The judge client — a separate model (and optionally a separate provider). Null if no key. */
+export function createJudgeClient(opts: ProviderOptions = {}): ProviderClient | null {
+  const resolved = resolveJudgeModel();
+  return resolved ? buildClient(resolved, opts) : null;
 }
 
 interface TransportResult {

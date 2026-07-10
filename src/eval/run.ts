@@ -1,28 +1,33 @@
 /**
  * `npm run eval` — run the agent over the golden set, score every answer against
  * the two-tier rubric, print the results, write out/ artifacts, and exit
- * non-zero if the REQUIRED tier drops below the bar (the CI gate).
+ * non-zero if the REQUIRED tier drops below the bar (the eval gate).
  *
- *   npm run eval                  # all questions, real agent, CI gate on
- *   npm run demo                  # first 6 questions (cheaper), for the README
- *   npm run eval -- --limit=3     # first 3
+ *   npm run eval                    # all questions, real agent
+ *   npm run demo                    # first 6 questions (cheaper), for the README
+ *   npm run eval -- --samples=5     # variance control: mean + range over 5 runs
  *   EVAL_REQUIRED_BAR=0.9 npm run eval
  *
- * The agent needs one API key (OPENROUTER / OPENAI / ANTHROPIC). The scoring is
- * deterministic; the LLM judge only adds ADDITIONAL-tier signal and is skipped
- * cleanly if unavailable.
+ * Two gates, kept distinct on purpose:
+ *   - the OFFLINE unit tests (`npm test`) run keyless in CI (.github/workflows).
+ *   - this EVAL gate needs a key, because it has to generate real trajectories.
+ *
+ * The judge is a SEPARATE model (see createJudgeClient / JUDGE_MODEL) and only
+ * scores the non-gating ADDITIONAL tier, so a wobbly or same-family judge never
+ * moves the gated number.
  */
 
 import { mkdir, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { runAgent } from "../agent/agent.js";
-import { createProviderClient, resolveAgentModel } from "../agent/provider.js";
+import { createJudgeClient, createProviderClient, judgeSharesFamilyWithAgent, resolveAgentModel, type ProviderClient } from "../agent/provider.js";
 import { selectBackend } from "../ramp/backend.js";
 import { GOLDEN } from "./golden.js";
-import { agentPrompt } from "./spec.js";
+import { agentPrompt, type GoldenQuestion } from "./spec.js";
 import { loadDotenv } from "./env.js";
 import { renderCriterionBreakdown, renderTable, renderTranscript } from "./report.js";
-import { passesGate, scoreQuestion, summarize, type QuestionScore } from "./rubric.js";
+import { passesGate, scoreQuestion, summarize, type EvalSummary, type QuestionScore } from "./rubric.js";
+import type { LLMClient } from "../agent/types.js";
 
 interface Args {
   limit: number;
@@ -30,6 +35,7 @@ interface Args {
   tag: string;
   requiredBar: number;
   noJudge: boolean;
+  samples: number;
 }
 
 function parseArgs(argv: string[]): Args {
@@ -41,8 +47,43 @@ function parseArgs(argv: string[]): Args {
     tag: get("tag") ?? "eval",
     requiredBar: process.env.EVAL_REQUIRED_BAR ? Number.parseFloat(process.env.EVAL_REQUIRED_BAR) : 0.9,
     noJudge: has("no-judge"),
+    samples: get("samples") ? Math.max(1, Number.parseInt(get("samples")!, 10)) : 1,
   };
 }
+
+interface Sample {
+  scores: QuestionScore[];
+  summary: EvalSummary;
+  transcripts: string[];
+}
+
+async function runSample(agent: LLMClient, judge: LLMClient | undefined, questions: GoldenQuestion[], quiet: boolean): Promise<Sample> {
+  const scores: QuestionScore[] = [];
+  const transcripts: string[] = [];
+  for (const q of questions) {
+    if (!quiet) process.stdout.write(`• ${q.id} … `);
+    const surface = selectBackend(); // fresh docs-handshake session per question
+    const t0 = Date.now();
+    try {
+      const { trajectory, finalAnswer } = await runAgent(agentPrompt(q), { client: agent, surface });
+      const score = await scoreQuestion(q, finalAnswer, trajectory, { judge });
+      scores.push(score);
+      transcripts.push(renderTranscript(q.question, trajectory, finalAnswer));
+      if (!quiet) console.log(`required ${score.requiredPassed}/${score.requiredTotal} ${score.requiredPass ? "PASS" : "FAIL"}, additional ${score.additionalPassed}/${score.additionalEvaluated}  (${trajectory.steps.length} calls, ${((Date.now() - t0) / 1000).toFixed(1)}s)`);
+    } catch (err) {
+      if (!quiet) console.log(`ERROR: ${(err as Error).message}`);
+      scores.push({
+        id: q.id, question: q.question, expected: q.expected, finalAnswer: `ERROR: ${(err as Error).message}`,
+        results: [], requiredTotal: 0, requiredPassed: 0, requiredPass: false,
+        additionalTotal: 0, additionalEvaluated: 0, additionalPassed: 0, additionalPass: false,
+        steps: 0, hitStepCap: false,
+      });
+    }
+  }
+  return { scores, summary: summarize(scores), transcripts };
+}
+
+const pct = (x: number) => `${(x * 100).toFixed(0)}%`;
 
 async function main(): Promise<void> {
   loadDotenv();
@@ -56,71 +97,77 @@ async function main(): Promise<void> {
   }
 
   const agent = createProviderClient();
-  const judge = args.noJudge ? undefined : createProviderClient({ maxTokens: 500 });
+  const judge: ProviderClient | undefined = args.noJudge ? undefined : createJudgeClient({ maxTokens: 500 }) ?? undefined;
   const questions = GOLDEN.slice(0, args.limit);
 
-  console.log(`ramp-analyst-evals — ${questions.length} question(s), model ${agent.label}, RAMP_MODE=${process.env.RAMP_MODE ?? "fixture"}\n`);
+  console.log(`ramp-analyst-evals — ${questions.length} question(s) x ${args.samples} sample(s), RAMP_MODE=${process.env.RAMP_MODE ?? "fixture"}`);
+  console.log(`  agent: ${agent.label}`);
+  if (judge) {
+    const shared = judgeSharesFamilyWithAgent();
+    console.log(`  judge: ${judge.label}  [${shared ? "SAME provider family as agent — self-preference risk; additional tier is non-gating" : "independent provider"}]`);
+    console.log(`         (set JUDGE_API_KEY to a different vendor for a true cross-family judge)`);
+  } else {
+    console.log(`  judge: disabled`);
+  }
+  console.log("");
 
-  const scores: QuestionScore[] = [];
-  const transcripts: string[] = [];
-  const startedAt = new Date().toISOString();
-
-  for (const q of questions) {
-    process.stdout.write(`• ${q.id} … `);
-    const surface = selectBackend(); // fresh docs-handshake session per question
-    const t0 = Date.now();
-    try {
-      const { trajectory, finalAnswer } = await runAgent(agentPrompt(q), { client: agent, surface });
-      const score = await scoreQuestion(q, finalAnswer, trajectory, { judge });
-      scores.push(score);
-      transcripts.push(renderTranscript(q.question, trajectory, finalAnswer));
-      console.log(`required ${score.requiredPassed}/${score.requiredTotal} ${score.requiredPass ? "PASS" : "FAIL"}, additional ${score.additionalPassed}/${score.additionalEvaluated}  (${trajectory.steps.length} tool calls, ${((Date.now() - t0) / 1000).toFixed(1)}s)`);
-    } catch (err) {
-      console.log(`ERROR: ${(err as Error).message}`);
-      scores.push({
-        id: q.id, question: q.question, expected: q.expected, finalAnswer: `ERROR: ${(err as Error).message}`,
-        results: [], requiredTotal: 0, requiredPassed: 0, requiredPass: false,
-        additionalTotal: 0, additionalEvaluated: 0, additionalPassed: 0, additionalPass: false,
-        steps: 0, hitStepCap: false,
-      });
-    }
+  const samples: Sample[] = [];
+  for (let i = 0; i < args.samples; i++) {
+    if (args.samples > 1) console.log(`— sample ${i + 1}/${args.samples} —`);
+    samples.push(await runSample(agent, judge, questions, false));
   }
 
-  const summary = summarize(scores);
-  console.log("\n" + renderTable(scores, summary) + "\n");
-  console.log(renderCriterionBreakdown(summary) + "\n");
+  // Aggregate. The deterministic REQUIRED tier is reported as a single mean; the
+  // model-dependent ADDITIONAL tier is reported as mean + range (variance control).
+  const reqRates = samples.map((s) => s.summary.requiredTierPassRate);
+  const addRates = samples.map((s) => s.summary.additionalTierPassRate);
+  const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
+  const meanRequired = mean(reqRates);
+  const meanAdditional = mean(addRates);
+  const allScores = samples.flatMap((s) => s.scores);
+  const mergedSummary = summarize(allScores);
 
-  // Token usage + estimated cost (agent + judge). Token counts are exact from
-  // the provider; cost is an estimate at the configured per-1M rate.
+  // Per-question table + criterion breakdown from the last sample / merged view.
+  const last = samples[samples.length - 1]!;
+  console.log("\n" + renderTable(last.scores, last.summary) + "\n");
+
+  if (args.samples > 1) {
+    console.log("Across samples:");
+    console.log(`  REQUIRED tier:   ${pct(meanRequired)} mean  (range ${pct(Math.min(...reqRates))}–${pct(Math.max(...reqRates))} over ${args.samples})`);
+    console.log(`  ADDITIONAL tier: ${pct(meanAdditional)} mean  (range ${pct(Math.min(...addRates))}–${pct(Math.max(...addRates))} over ${args.samples})\n`);
+  }
+  console.log(renderCriterionBreakdown(mergedSummary) + "\n");
+
   const promptTokens = agent.usage.promptTokens + (judge?.usage.promptTokens ?? 0);
   const completionTokens = agent.usage.completionTokens + (judge?.usage.completionTokens ?? 0);
   const calls = agent.usage.calls + (judge?.usage.calls ?? 0);
   const priceIn = Number.parseFloat(process.env.AGENT_PRICE_IN ?? "");
   const priceOut = Number.parseFloat(process.env.AGENT_PRICE_OUT ?? "");
-  const estCostUsd = Number.isFinite(priceIn) && Number.isFinite(priceOut)
-    ? (promptTokens / 1e6) * priceIn + (completionTokens / 1e6) * priceOut
-    : null;
+  const estCostUsd = Number.isFinite(priceIn) && Number.isFinite(priceOut) ? (promptTokens / 1e6) * priceIn + (completionTokens / 1e6) * priceOut : null;
   console.log(
-    `Usage: ${calls} API calls, ${promptTokens.toLocaleString()} prompt + ${completionTokens.toLocaleString()} completion tokens` +
+    `Usage (all samples): ${calls} API calls, ${promptTokens.toLocaleString()} prompt + ${completionTokens.toLocaleString()} completion tokens` +
       (estCostUsd !== null ? `  ≈ $${estCostUsd.toFixed(2)} (at $${priceIn}/$${priceOut} per 1M in/out)` : "  (set AGENT_PRICE_IN / AGENT_PRICE_OUT for a $ estimate)"),
   );
 
   await mkdir(args.outDir, { recursive: true });
   const meta = {
-    startedAt, finishedAt: new Date().toISOString(), model: agent.label, tag: args.tag, requiredBar: args.requiredBar,
+    startedAt: new Date().toISOString(), model: agent.label, judge: judge?.label ?? null, judgeSharesFamily: judge ? judgeSharesFamilyWithAgent() : null,
+    tag: args.tag, requiredBar: args.requiredBar, samples: args.samples,
+    requiredTier: { mean: meanRequired, min: Math.min(...reqRates), max: Math.max(...reqRates), perSample: reqRates },
+    additionalTier: { mean: meanAdditional, min: Math.min(...addRates), max: Math.max(...addRates), perSample: addRates },
     usage: { calls, promptTokens, completionTokens, estCostUsd },
-    ...summary,
+    criterionPassRates: mergedSummary.criterionPassRates,
   };
-  await writeFile(resolve(args.outDir, "results.jsonl"), scores.map((s) => JSON.stringify(s)).join("\n") + "\n", "utf8");
+  await writeFile(resolve(args.outDir, "results.jsonl"), last.scores.map((s) => JSON.stringify(s)).join("\n") + "\n", "utf8");
   await writeFile(resolve(args.outDir, "summary.json"), JSON.stringify(meta, null, 2), "utf8");
-  await writeFile(resolve(args.outDir, "transcripts.md"), transcripts.join("\n---\n\n"), "utf8");
+  await writeFile(resolve(args.outDir, "transcripts.md"), last.transcripts.join("\n---\n\n"), "utf8");
   console.log(`Artifacts written to ${args.outDir}/ (results.jsonl, summary.json, transcripts.md)`);
 
-  if (!passesGate(summary, args.requiredBar)) {
-    console.error(`\nCI GATE: REQUIRED tier ${(summary.requiredTierPassRate * 100).toFixed(0)}% < bar ${(args.requiredBar * 100).toFixed(0)}% — failing.`);
+  if (!passesGate({ ...mergedSummary, requiredTierPassRate: meanRequired }, args.requiredBar)) {
+    console.error(`\nEVAL GATE: REQUIRED tier ${pct(meanRequired)} < bar ${pct(args.requiredBar)} — failing.`);
     process.exit(1);
   }
-  console.log(`\nCI GATE: REQUIRED tier ${(summary.requiredTierPassRate * 100).toFixed(0)}% ≥ bar ${(args.requiredBar * 100).toFixed(0)}% — pass.`);
+  console.log(`\nEVAL GATE: REQUIRED tier ${pct(meanRequired)} ≥ bar ${pct(args.requiredBar)} — pass.`);
 }
 
 main().catch((err) => {
