@@ -127,14 +127,22 @@ async function main(): Promise<void> {
   const allScores = samples.flatMap((s) => s.scores);
   const mergedSummary = summarize(allScores);
 
-  // Per-question table + criterion breakdown from the last sample / merged view.
+  // Per-question pass frequency across samples (informative under sampling).
   const last = samples[samples.length - 1]!;
-  console.log("\n" + renderTable(last.scores, last.summary) + "\n");
+  const perQuestion = questions.map((q) => {
+    const runs = samples.map((s) => s.scores.find((x) => x.id === q.id)!);
+    return { id: q.id, samples: args.samples, requiredPass: runs.filter((r) => r.requiredPass).length, additionalPass: runs.filter((r) => r.additionalPass).length };
+  });
 
   if (args.samples > 1) {
+    console.log("Per-question pass frequency (over samples):");
+    for (const p of perQuestion) console.log(`  ${p.id.padEnd(24)} required ${p.requiredPass}/${p.samples}   additional ${p.additionalPass}/${p.samples}`);
+    console.log("");
     console.log("Across samples:");
     console.log(`  REQUIRED tier:   ${pct(meanRequired)} mean  (range ${pct(Math.min(...reqRates))}–${pct(Math.max(...reqRates))} over ${args.samples})`);
     console.log(`  ADDITIONAL tier: ${pct(meanAdditional)} mean  (range ${pct(Math.min(...addRates))}–${pct(Math.max(...addRates))} over ${args.samples})\n`);
+  } else {
+    console.log("\n" + renderTable(last.scores, last.summary) + "\n");
   }
   console.log(renderCriterionBreakdown(mergedSummary) + "\n");
 
@@ -155,6 +163,7 @@ async function main(): Promise<void> {
     tag: args.tag, requiredBar: args.requiredBar, samples: args.samples,
     requiredTier: { mean: meanRequired, min: Math.min(...reqRates), max: Math.max(...reqRates), perSample: reqRates },
     additionalTier: { mean: meanAdditional, min: Math.min(...addRates), max: Math.max(...addRates), perSample: addRates },
+    perQuestion,
     usage: { calls, promptTokens, completionTokens, estCostUsd },
     criterionPassRates: mergedSummary.criterionPassRates,
   };
