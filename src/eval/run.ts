@@ -89,8 +89,27 @@ async function main(): Promise<void> {
   console.log("\n" + renderTable(scores, summary) + "\n");
   console.log(renderCriterionBreakdown(summary) + "\n");
 
+  // Token usage + estimated cost (agent + judge). Token counts are exact from
+  // the provider; cost is an estimate at the configured per-1M rate.
+  const promptTokens = agent.usage.promptTokens + (judge?.usage.promptTokens ?? 0);
+  const completionTokens = agent.usage.completionTokens + (judge?.usage.completionTokens ?? 0);
+  const calls = agent.usage.calls + (judge?.usage.calls ?? 0);
+  const priceIn = Number.parseFloat(process.env.AGENT_PRICE_IN ?? "");
+  const priceOut = Number.parseFloat(process.env.AGENT_PRICE_OUT ?? "");
+  const estCostUsd = Number.isFinite(priceIn) && Number.isFinite(priceOut)
+    ? (promptTokens / 1e6) * priceIn + (completionTokens / 1e6) * priceOut
+    : null;
+  console.log(
+    `Usage: ${calls} API calls, ${promptTokens.toLocaleString()} prompt + ${completionTokens.toLocaleString()} completion tokens` +
+      (estCostUsd !== null ? `  ≈ $${estCostUsd.toFixed(2)} (at $${priceIn}/$${priceOut} per 1M in/out)` : "  (set AGENT_PRICE_IN / AGENT_PRICE_OUT for a $ estimate)"),
+  );
+
   await mkdir(args.outDir, { recursive: true });
-  const meta = { startedAt, finishedAt: new Date().toISOString(), model: agent.label, tag: args.tag, requiredBar: args.requiredBar, ...summary };
+  const meta = {
+    startedAt, finishedAt: new Date().toISOString(), model: agent.label, tag: args.tag, requiredBar: args.requiredBar,
+    usage: { calls, promptTokens, completionTokens, estCostUsd },
+    ...summary,
+  };
   await writeFile(resolve(args.outDir, "results.jsonl"), scores.map((s) => JSON.stringify(s)).join("\n") + "\n", "utf8");
   await writeFile(resolve(args.outDir, "summary.json"), JSON.stringify(meta, null, 2), "utf8");
   await writeFile(resolve(args.outDir, "transcripts.md"), transcripts.join("\n---\n\n"), "utf8");
