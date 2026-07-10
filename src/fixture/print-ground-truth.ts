@@ -1,5 +1,5 @@
 /**
- * `npm run ground-truth` — print the fixture's planted patterns and headline
+ * `npm run ground-truth`: print the fixture's planted patterns and headline
  * aggregates, so a reviewer can eyeball what the analyst is expected to find
  * without reading any SQL.
  */
@@ -10,7 +10,7 @@ import * as GT from "./ground-truth.js";
 const line = (s = "") => console.log(s);
 const money = centsToDisplay;
 
-line(`${COMPANY.name} — ${PERIOD.label} (${PERIOD.start} .. ${PERIOD.end})`);
+line(`${COMPANY.name}: ${PERIOD.label} (${PERIOD.start} .. ${PERIOD.end})`);
 line("=".repeat(64));
 line(`transactions: ${GT.transactionCount}   users: ${USERS.length} (${GT.activeUserCount} active, ${GT.inactiveUserCount} inactive)   bills: ${BILLS.length}   vendors: ${VENDORS.length}`);
 line(`gross spend:  ${money(GT.grossCents)}`);
@@ -44,7 +44,7 @@ line(`    variants: ${GT.deltaVariants.join(" / ")}`);
 line(`    combined Delta spend: ${money(GT.deltaCombinedCents)}`);
 line();
 line("(c) Out-of-policy:");
-for (const o of GT.outOfPolicy) line(`    ${o.merchant_name} ${money(o.amount_cents)} — ${o.user_name} on ${o.date}`);
+for (const o of GT.outOfPolicy) line(`    ${o.merchant_name} ${money(o.amount_cents)}, ${o.user_name} on ${o.date}`);
 line();
 line("(d) Month-over-month spike:");
 const s = GT.biggestSpike;

@@ -5,8 +5,8 @@
  * pass (all required criteria pass) and an ADDITIONAL pass (all evaluated
  * additional criteria pass). Deterministic criteria run in-process; judge
  * criteria go to the injected LLM judge, or are skipped (pass = null) when no
- * judge is available, so the deterministic REQUIRED tier — and the CI gate that
- * rides on it — never depends on a model being reachable.
+ * judge is available, so the deterministic REQUIRED tier, and the CI gate that
+ * rides on it, never depends on a model being reachable.
  */
 
 import type { LLMClient, Trajectory } from "../agent/types.js";
@@ -39,7 +39,7 @@ export interface QuestionScore {
   additionalPass: boolean;
   steps: number;
   hitStepCap: boolean;
-  /** Infrastructure failure (timeout / abort / 5xx after retries) — NOT a wrong
+  /** Infrastructure failure (timeout / abort / 5xx after retries): NOT a wrong
    * answer. Excluded from pass-rate denominators so slow models aren't penalized. */
   infraError?: boolean;
   errorMessage?: string;
@@ -116,7 +116,7 @@ async function evaluate(
 export interface EvalSummary {
   /** Scored questions (infra errors excluded). */
   total: number;
-  /** Questions dropped for an infra error (timeout/abort/5xx) — reported, not scored. */
+  /** Questions dropped for an infra error (timeout/abort/5xx): reported, not scored. */
   errored: number;
   requiredTierPassRate: number;
   additionalTierPassRate: number;
@@ -127,7 +127,7 @@ export interface EvalSummary {
 }
 
 export function summarize(allScores: QuestionScore[]): EvalSummary {
-  // Infra errors are not capability failures — drop them from the denominator.
+  // Infra errors are not capability failures: drop them from the denominator.
   const errored = allScores.filter((s) => s.infraError).length;
   const scores = allScores.filter((s) => !s.infraError);
   const total = scores.length;

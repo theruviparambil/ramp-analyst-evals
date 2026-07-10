@@ -1,5 +1,5 @@
 /**
- * Trajectory assertions — "grade the reasoning path, not just the answer."
+ * Trajectory assertions: "grade the reasoning path, not just the answer."
  *
  * The final number can be right for the wrong reasons (a lucky guess, a cached
  * figure, a write that happened to not matter). These checks inspect the
@@ -61,7 +61,7 @@ export function queryAttemptsWithin(ctx: CheckContext, max: number): CheckOutcom
   const attempts = ctx.trajectory.steps.filter((s) => s.name === "execute_analyst_query").length;
   return attempts <= max
     ? { pass: true, detail: `${attempts} query attempt(s) (≤ ${max})` }
-    : { pass: false, detail: `${attempts} query attempts (> ${max}) — thrashing` };
+    : { pass: false, detail: `${attempts} query attempts (> ${max}), thrashing` };
 }
 
 /** The agent finished (did not hit the tool-call budget cap). */
@@ -90,7 +90,7 @@ export function aggregatedInSql(ctx: CheckContext, maxRows = 25): CheckOutcome {
 
 /**
  * OBSERVED discriminator: the agent did not waste calls re-fetching what it
- * already had — no repeated catalog/doc reads and no identical query run twice.
+ * already had: no repeated catalog/doc reads and no identical query run twice.
  */
 export function noRedundantRefetch(ctx: CheckContext): CheckOutcome {
   const seen = new Set<string>();

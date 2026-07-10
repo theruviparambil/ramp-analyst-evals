@@ -3,7 +3,7 @@
  *
  * Given a finance question, it plans and calls Ramp tools until it can answer,
  * then stops. It self-corrects on the two failure modes the real analyst surface
- * produces — a docs_required handshake response and a genuine DuckDB SQL error —
+ * produces (a docs_required handshake response and a genuine DuckDB SQL error)
  * by feeding the tool result back to the model and letting it retry. It only
  * ever holds READ tools, and it records every call (name, rationale, args,
  * result) into a Trajectory, which is what the eval grades. Provider-agnostic:

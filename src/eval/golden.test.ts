@@ -34,7 +34,7 @@ describe("golden set structure", () => {
   });
 });
 
-describe("Q05 vendor variant — end to end", () => {
+describe("Q05 vendor variant: end to end", () => {
   const q5 = byId("q05_vendor_variant");
   const COMBINED = `SELECT SUM(sf.amount) AS total FROM analyst.spend_facts sf
     JOIN analyst.merchant_dim md ON sf.merchant_uuid = md.merchant_uuid
@@ -69,7 +69,7 @@ describe("Q05 vendor variant — end to end", () => {
   });
 });
 
-describe("Q04 duplicate — structured grading closes the substring false-negative", () => {
+describe("Q04 duplicate: structured grading closes the substring false-negative", () => {
   const q4 = byId("q04_duplicate_charge");
   // A same-day GROUP BY finds nothing (the real charges are 3 days apart).
   const SAME_DAY = "SELECT sf.merchant_name, sf.amount, sf.transaction_date, COUNT(*) AS n FROM analyst.spend_facts sf GROUP BY sf.merchant_name, sf.amount, sf.transaction_date HAVING COUNT(*) > 1";
@@ -95,7 +95,7 @@ describe("Q04 duplicate — structured grading closes the substring false-negati
       catalog(),
       spendDocs(),
       toolTurn("proximity scan", [{ name: "execute_analyst_query", args: { sql: PROXIMITY, rationale: "check datadog repeats" } }]),
-      finalTurn('Datadog $8,400.00 was charged twice within days (2026-05-12 and 2026-05-15) — a likely double-charge of the monthly bill.\n```json\n{"duplicates": [{"merchant": "Datadog", "amount_usd": 8400.00, "dates": ["2026-05-12", "2026-05-15"]}]}\n```'),
+      finalTurn('Datadog $8,400.00 was charged twice within days (2026-05-12 and 2026-05-15), a likely double-charge of the monthly bill.\n```json\n{"duplicates": [{"merchant": "Datadog", "amount_usd": 8400.00, "dates": ["2026-05-12", "2026-05-15"]}]}\n```'),
     ]);
     const { trajectory, finalAnswer } = await runAgent(agentPrompt(q4), { client, surface: createFixtureBackend() });
     const score = await scoreQuestion(q4, finalAnswer, trajectory, {});

@@ -1,5 +1,5 @@
 /**
- * The golden set — 12 finance questions over the fixture.
+ * The golden set: 12 finance questions over the fixture.
  *
  * Correctness is graded on a STRUCTURED answer, not free-text. Each question
  * tells the agent to emit a small JSON block, and req.value compares that block
@@ -9,7 +9,7 @@
  * its `duplicates: []` fails set-containment against the planted pair.
  *
  * Tiers (Hebbia framing): REQUIRED = the SLA; ADDITIONAL = headroom. Criteria are
- * also tagged INVARIANT (surface-enforced — cannot fail when the tool surface
+ * also tagged INVARIANT (surface-enforced: cannot fail when the tool surface
  * behaves) vs OBSERVED (real agent behavior a lazy/wrong agent can fail), so the
  * report never dresses a harness guarantee up as model virtue.
  */
@@ -47,14 +47,14 @@ import { det, judged, type Criterion, type GoldenQuestion } from "./spec.js";
 const fmt = centsToDisplay;
 
 const jsonBlock = (shape: string): string =>
-  `Write a brief explanation in prose, then end your message with a single fenced JSON code block with exactly this shape (numbers as plain numbers — no $ signs, no commas):\n\`\`\`json\n${shape}\n\`\`\``;
+  `Write a brief explanation in prose, then end your message with a single fenced JSON code block with exactly this shape (numbers as plain numbers, no $ signs, no commas):\n\`\`\`json\n${shape}\n\`\`\``;
 
 // Required SLAs shared by every question. read_only and rationale are
 // surface-enforced invariants (the surface never exposes a write tool and
 // rejects a call without a rationale). grounded is observed, not invariant:
 // it fails when the agent answers without ever landing a successful query.
 const baseRequired = (grounding: string): Criterion[] => [
-  det("req.read_only", "required", "Read-only — no write tool was called", readOnly, "invariant"),
+  det("req.read_only", "required", "Read-only: no write tool was called", readOnly, "invariant"),
   det("req.rationale", "required", "Every tool call carried a rationale", everyCallHasRationale, "invariant"),
   det("req.grounded", "required", `Grounded in a successful ${grounding} call`, (c) => groundedIn(c, grounding), "observed"),
 ];
@@ -116,7 +116,7 @@ export const GOLDEN: GoldenQuestion[] = [
   {
     id: "q04_duplicate_charge",
     question: "Are there any duplicate charges from Q2 we should investigate?",
-    expected: `One material duplicate: Datadog ${fmt(GT.duplicatePairs[0]!.amount_cents)} charged on ${GT.duplicatePairs[0]!.dates[0]} and ${GT.duplicatePairs[0]!.dates[1]} — a likely double-charge of the recurring monthly bill (NOT the normal monthly charge).`,
+    expected: `One material duplicate: Datadog ${fmt(GT.duplicatePairs[0]!.amount_cents)} charged on ${GT.duplicatePairs[0]!.dates[0]} and ${GT.duplicatePairs[0]!.dates[1]}, a likely double-charge of the recurring monthly bill (NOT the normal monthly charge).`,
     answerInstructions: jsonBlock(`{"duplicates": [{"merchant": <string>, "amount_usd": <number>, "dates": ["YYYY-MM-DD", "YYYY-MM-DD"]}]}  // empty array if there are none`),
     criteria: [
       ...baseRequired("execute_analyst_query"),
@@ -143,7 +143,7 @@ export const GOLDEN: GoldenQuestion[] = [
   {
     id: "q06_out_of_policy",
     question: "Were there any out-of-policy transactions in Q2? If so, which and why?",
-    expected: `One: ${GT.outOfPolicy[0]!.merchant_name} ${fmt(GT.outOfPolicy[0]!.amount_cents)} by ${GT.outOfPolicy[0]!.user_name} on ${GT.outOfPolicy[0]!.date} — a meal above the $500 single-transaction cap.`,
+    expected: `One: ${GT.outOfPolicy[0]!.merchant_name} ${fmt(GT.outOfPolicy[0]!.amount_cents)} by ${GT.outOfPolicy[0]!.user_name} on ${GT.outOfPolicy[0]!.date}, a meal above the $500 single-transaction cap.`,
     answerInstructions: jsonBlock(`{"out_of_policy": [{"merchant": <string>, "amount_usd": <number>}]}  // empty array if none`),
     criteria: [
       ...baseRequired("execute_analyst_query"),
@@ -229,7 +229,7 @@ export const GOLDEN: GoldenQuestion[] = [
     expected: `${GT.activeUserCount} active users (of ${GT.activeUserCount + GT.inactiveUserCount}); average net spend per active user = ${fmt(GT.avgSpendPerActiveUserCents)}.`,
     answerInstructions: jsonBlock(`{"active_users": <number>, "avg_spend_per_active_user_usd": <number>}`),
     criteria: [
-      det("req.read_only", "required", "Read-only — no write tool was called", readOnly, "invariant"),
+      det("req.read_only", "required", "Read-only: no write tool was called", readOnly, "invariant"),
       det("req.rationale", "required", "Every tool call carried a rationale", everyCallHasRationale, "invariant"),
       det("req.grounded", "required", "Grounded in a successful data tool call", (c) => (groundedIn(c, "execute_analyst_query").pass || groundedIn(c, "get_all_reduced_users").pass ? { pass: true, detail: "grounded" } : { pass: false, detail: "no successful users/analyst call" }), "observed"),
       det("req.value", "required", `Active users = ${GT.activeUserCount}`, (c) => structIntEquals(c, "active_users", GT.activeUserCount), "observed"),

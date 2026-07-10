@@ -1,6 +1,6 @@
 # ramp-analyst-evals
 
-An agentic finance analyst built on Ramp's public agent-tool surface, plus the eval harness that proves — or disproves — that it works.
+An agentic finance analyst built on Ramp's public agent-tool surface, plus the eval harness that proves, or disproves, that it works.
 
 The agent answers spend questions the way an analyst would: it reads the data
 catalog, pulls the domain docs, writes read-only SQL against `analyst.spend_facts`,
@@ -17,14 +17,14 @@ documented stub (see below) for pointing the same tool calls at Ramp's real MCP 
 
 > **Disclaimer.** Independent project. Not affiliated with, authorized, or endorsed by Ramp.
 > "Ramp" is a trademark of its owner, used here nominatively to describe the public agent-tool
-> surface this project is built on. No proprietary Ramp data or code is included — the schemas are
+> surface this project is built on. No proprietary Ramp data or code is included: the schemas are
 > reproduced from Ramp's public spec, and all data is synthetic.
 
 ## Results (real run)
 
 12 questions, run **5 times each** so the model-dependent tier reports a mean and
 a range, not a single wobbling number. Agent `gpt-5.1` (OpenAI); judge **Claude
-Sonnet 4.6 on AWS Bedrock — a genuinely different model family from the agent**;
+Sonnet 4.6 on AWS Bedrock, a genuinely different model family from the agent**;
 `RAMP_MODE=fixture`.
 
 | | |
@@ -33,7 +33,7 @@ Sonnet 4.6 on AWS Bedrock — a genuinely different model family from the agent*
 | **ADDITIONAL tier** (headroom) | **47% mean**, range **33–58%** |
 | Cost | agent **$1.19** (OpenAI, 198 calls) + judge **$0.13** (Bedrock, 60 calls) = **$1.32** |
 | Offline tests (CI) | **96 passing**, keyless |
-| Eval gate @ REQUIRED ≥ 0.9 | **fails at 88%** — on purpose (see below) |
+| Eval gate @ REQUIRED ≥ 0.9 | **fails at 88%**, on purpose (see below) |
 
 Per-question, how often each tier fully passed across the 5 runs:
 
@@ -56,10 +56,10 @@ q12_active_users         required 5/5   additional 2/5
 a 0.9 REQUIRED-tier pass rate; `gpt-5.1` lands at 0.88. It won't wave the agent
 through, because the agent has two real misses:
 
-- **q04 (duplicates)** — on several runs the model groups by *exact same date* and
+- **q04 (duplicates)**: on several runs the model groups by *exact same date* and
   reports "no duplicates," missing the planted Datadog double-charge three days
   apart. This is the single most important test in the repo (see below).
-- **q06 (out-of-policy)** — on 4 of 5 runs the model answers the policy question in
+- **q06 (out-of-policy)**: on 4 of 5 runs the model answers the policy question in
   the abstract and never queries `spend_facts.policy_status`, so it fails to name
   the Nobu charge. `req.grounded` catches the give-up (it dropped to 93%).
 
@@ -78,14 +78,14 @@ surface-enforced invariants: read-only 60/60 and rationale-on-every-call 60/60.
 [ADD] (obs) add.policy_cited       0/5     0%   stopped citing the $500 cap in prose
 ```
 
-`(inv)` marks **surface-enforced invariants** — checks that cannot fail while the
+`(inv)` marks **surface-enforced invariants**: checks that cannot fail while the
 tool surface behaves: write tools are never handed to the agent, and the surface
 rejects any call missing a rationale. They're guarantees of the harness, not
-evidence about the model. Everything else is `(obs)` — observed behavior that
+evidence about the model. Everything else is `(obs)`: observed behavior that
 genuinely depends on what the agent chose to do, including grounding and the
 catalog/docs path checks, which fail when the agent answers without ever landing
 a query. Labeling them apart keeps the report from dressing one up as the other. The additional tier dropped from an earlier build because
-asking the agent for a machine-checkable JSON block made its prose terser — a real
+asking the agent for a machine-checkable JSON block made its prose terser, a real
 tradeoff, and exactly the kind of thing you want measured rather than guessed.
 
 Reproduce the whole scoring machinery with no key in ~30 seconds:
@@ -108,14 +108,14 @@ npm run ask -- "How much did we spend with Delta in Q2?"
 ## Three agents, head to head
 
 Point the same 12 questions at three frontier agents and the harness
-discriminates. Each is graded **cross-family** — no model grades its own family.
+discriminates. Each is graded **cross-family**: no model grades its own family.
 The two OpenAI agents share the *same* Bedrock Claude judge, so they're directly
 comparable; the required tier is deterministic (structured-value equality against
 the oracle), so the agent comparison is judge-independent regardless.
 
 | | GPT-5.1 · Claude judge | GPT-5.5 · Claude judge | Claude Sonnet 4.6 · GPT-5.1 judge |
 |---|---|---|---|
-| REQUIRED tier | 88% (83–100%) — **fails** 0.9 | **92%** (92–92%) — **clears** | **100%** (100–100%) — **clears** |
+| REQUIRED tier | 88% (83–100%), **fails** 0.9 | **92%** (92–92%), **clears** | **100%** (100–100%), **clears** |
 | ADDITIONAL tier | 47% (33–58%) | **60%** (50–75%) | 42% (33–50%) |
 | Agent cost (5×12) | $1.19 | $6.59 | $4.57 |
 | Judge cost | $0.13 | $0.12 | $0.06 |
@@ -139,32 +139,32 @@ q12_active_users           5/5       5/5        5/5
 ```
 
 **Was "Claude beats GPT-5.1" a real gap or a recency artifact? Mostly recency.**
-GPT-5.5 — OpenAI's current frontier — clears the same 0.9 gate GPT-5.1 fails, and
+GPT-5.5, OpenAI's current frontier, clears the same 0.9 gate GPT-5.1 fails, and
 closes almost all of the difference on the two anomaly questions: it catches the
 time-gapped Datadog duplicate every time (q04, 3/5 → 5/5) and the out-of-policy
 Nobu charge on 4 of 5 runs (q06, 1/5 → 4/5, citing the $500 cap). So the honest
 reading is **newer beats older, and the harness tracks that across model
-generations** — not "Claude beats OpenAI." Both current frontier models clear the
+generations**, not "Claude beats OpenAI." Both current frontier models clear the
 required tier; the older GPT-5.1 doesn't.
 
 Two things that survive the recency control and are worth stating plainly. First,
-Claude still has the cleanest required tier (100% vs 92%) — it's the only agent
-that never misses q06. Second — and this is the harness catching something a
-recency ladder would hide — **GPT-5.5 regressed on refunds** (q10, 4/5 → 1/5): it
+Claude still has the cleanest required tier (100% vs 92%). It's the only agent
+that never misses q06. Second (and this is the harness catching something a
+recency ladder would hide), **GPT-5.5 regressed on refunds** (q10, 4/5 → 1/5): it
 mishandled the gross-vs-net-with-refunds question the older GPT-5.1 mostly got
 right. Newer is not uniformly better, and per-model quirks show up regardless of
 release date. GPT-5.5 does lead the softer ADDITIONAL tier (60%), mostly on money
 formatting.
 
-This is a snapshot on one fixture, not a league table — but it's reproducible, and
+This is a snapshot on one fixture, not a league table. But it's reproducible, and
 the point is the harness produces a real, per-question signal to compare on at all.
-(Cost note: the agents price very differently — GPT-5.1 $1.25/$10, Claude $3/$15,
-GPT-5.5 $5/$30 per 1M in/out — so the cost row reflects rate as much as token use.)
+(Cost note: the agents price very differently: GPT-5.1 $1.25/$10, Claude $3/$15,
+GPT-5.5 $5/$30 per 1M in/out, so the cost row reflects rate as much as token use.)
 
 ## The test that matters: structured grading
 
 Substring grading is a coinflip. The planted duplicate is a Datadog charge of
-`$8,400.00` — but `$8,400.00` is *also* Datadog's legitimate monthly bill. So this
+`$8,400.00`, but `$8,400.00` is *also* Datadog's legitimate monthly bill. So this
 confidently-wrong answer would pass a naive "does it say Datadog and $8,400" check:
 
 > "No duplicate charges. The Datadog $8,400.00 charge is the normal recurring
@@ -173,7 +173,7 @@ confidently-wrong answer would pass a naive "does it say Datadog and $8,400" che
 To close that, every question asks the agent to emit a machine-readable JSON block
 next to its prose, and `req.value` grades that block for set / vector / scalar
 **equality** against the independent oracle. The answer above carries
-`{"duplicates": []}`, which fails set-containment against the planted pair — so it
+`{"duplicates": []}`, which fails set-containment against the planted pair, so it
 now fails REQUIRED, as it should. There's a regression test pinning exactly this
 (`src/eval/golden.test.ts`). This is what makes the oracle load-bearing instead of
 decorative.
@@ -182,7 +182,7 @@ decorative.
 
 `q02_top_vendor`, from [`out/transcripts.md`](out/transcripts.md). Note the
 handshake: the agent reads the catalog and domain docs *before* it writes SQL,
-because the tool surface returns `docs_required` otherwise — the same prerequisite
+because the tool surface returns `docs_required` otherwise, the same prerequisite
 Ramp's Core enforces.
 
 ```
@@ -231,7 +231,7 @@ lucky guess or a write that happened to not matter. So the harness asserts on th
 trajectory: did the agent consult the catalog before querying, did it read docs for
 every table it referenced, did it aggregate in SQL instead of scanning raw
 transactions, did it avoid redundant re-fetches. The last two are genuine
-discriminators — a lazy agent fails them even with the right number.
+discriminators: a lazy agent fails them even with the right number.
 
 **Two binary tiers (Hebbia's framing).** REQUIRED = the SLA (right value, read-only,
 grounded). ADDITIONAL = headroom (cite the SQL, catch the variant, flag the anomaly,
@@ -250,36 +250,36 @@ isn't a measurement.
 **Infra failures aren't capability failures.** A slow reasoning model whose call
 times out, or a transient 5xx, is retried; if it still fails it's flagged an infra
 error and *excluded from the pass-rate*, not scored as a wrong answer. (The
-per-request timeout is configurable — `AGENT_TIMEOUT_MS` — precisely because a fixed
+per-request timeout is configurable (`AGENT_TIMEOUT_MS`) precisely because a fixed
 timeout that marks slow models wrong is a fairness bug. This surfaced comparing
 GPT-5.5: a 90s cap was aborting its reasoning calls and mis-scoring them.)
 
-**A judge you don't over-trust — and can swap for a different family.** A model
+**A judge you don't over-trust, and can swap for a different family.** A model
 grades exactly one criterion, `add.faithful`, on the non-gating ADDITIONAL tier.
-Everything that gates — the entire REQUIRED tier — is deterministic: structured
+Everything that gates, the entire REQUIRED tier, is deterministic: structured
 value equality against the oracle, plus rule checks (read-only, grounded,
 rationale). No model grades the pass/fail that matters, so judge bias can't reach
 the gate by construction. On top of that, the judge itself is swappable: the repo
-ships three judge transports — OpenAI, Anthropic, and **AWS Bedrock**
-(the Converse API over a Bearer token, no SDK) — so the judge can be a genuinely
+ships three judge transports: OpenAI, Anthropic, and **AWS Bedrock**
+(the Converse API over a Bearer token, no SDK), so the judge can be a genuinely
 different family from the agent in one env var:
 `JUDGE_TRANSPORT=bedrock JUDGE_MODEL=us.anthropic.claude-sonnet-4-6`. **The committed
-run above is judged by Claude Sonnet 4.6 on Bedrock** grading a GPT-5.1 agent —
+run above is judged by Claude Sonnet 4.6 on Bedrock** grading a GPT-5.1 agent,
 cross-family, not self-grading. As a sanity check, re-scoring the same answers with
 a same-family `gpt-4.1` judge agreed with Claude 12/12 on `add.faithful`, and the
-additional-tier mean came out the same 47% either way — so the soft-tier signal
-isn't an artifact of one judge (and, gating aside, judge choice doesn't move it). The full judge-validation method — proving a grader with
-inter-rater agreement (Cohen's / Fleiss' κ) instead of accuracy — lives in the
+additional-tier mean came out the same 47% either way, so the soft-tier signal
+isn't an artifact of one judge (and, gating aside, judge choice doesn't move it). The full judge-validation method, proving a grader with
+inter-rater agreement (Cohen's / Fleiss' κ) instead of accuracy, lives in the
 companion repo, [veriva-eval](https://github.com/theruviparambil/veriva-eval).
 
-**Two gates, kept honest.** The 96 offline tests are the CI gate — they run keyless
+**Two gates, kept honest.** The 96 offline tests are the CI gate: they run keyless
 on every push ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)). The *eval*
 gate is the `process.exit` in `npm run eval`; it needs a key because it has to
 generate real trajectories, so it runs on demand, not in CI.
 
 ## The fixture is the ground truth
 
-One synthetic company, **Vela Robotics** — 15 users across 6 departments, **207**
+One synthetic company, **Vela Robotics**: 15 users across 6 departments, **207**
 card transactions over Q2 2026, plus vendors and AP bills. Generated from a fixed
 seed (integer cents, no float drift), so every run sees identical data. Because we
 own it, every question has an exact expected answer, computed by a TypeScript
@@ -354,7 +354,7 @@ src/
   money.ts                cents-based money + Ramp formatting
   fixture/
     data.ts               the synthetic company (deterministic, seeded)
-    ground-truth.ts       the independent oracle — every expected answer
+    ground-truth.ts       the independent oracle: every expected answer
   ramp/
     analyst-db.ts         in-process DuckDB: analyst.* tables, read-only SQL
     docs.ts               catalog + domain docs (the semantic source of truth)
@@ -377,7 +377,7 @@ src/
 out/                      committed receipts from the run above
 ```
 
-## Live mode — bring your own sandbox
+## Live mode: bring your own sandbox
 
 `RAMP_MODE=live` routes the identical tool calls to Ramp's real MCP endpoint. The
 tool names and argument schemas already match, so no other module changes. Wiring
@@ -397,11 +397,11 @@ deliverable; the credentials are yours.
 
 ## Methodology hub
 
-The judge-validation half of this discipline — proving a grader is reliable with
-inter-rater agreement (Cohen's / Fleiss' κ) instead of accuracy — lives in the
+The judge-validation half of this discipline, proving a grader is reliable with
+inter-rater agreement (Cohen's / Fleiss' κ) instead of accuracy, lives in the
 companion repo, **[veriva-eval](https://github.com/theruviparambil/veriva-eval)**.
 This repo is the agent-and-harness end of the same story.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE).

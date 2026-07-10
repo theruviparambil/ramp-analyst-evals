@@ -1,5 +1,5 @@
 /**
- * Fixture backend — the default tool surface, backed by the local synthetic
+ * Fixture backend: the default tool surface, backed by the local synthetic
  * company and a real in-process DuckDB.
  *
  * It is schema-faithful to Ramp's agent-tool wire shapes (formatted-string
@@ -36,7 +36,7 @@ class FixtureBackend implements RampToolSurface {
     const def = getToolDef(name);
     if (!def) return { ok: false, error: `unknown tool: ${name}` };
 
-    // Validate arguments before executing (validate tool-call args — security floor).
+    // Validate arguments before executing (validate tool-call args, security floor).
     const parsed = def.argsSchema.safeParse(rawArgs ?? {});
     if (!parsed.success) {
       const detail = parsed.error.issues.map((i) => `${i.path.join(".") || "(root)"}: ${i.message}`).join("; ");
@@ -112,7 +112,7 @@ class FixtureBackend implements RampToolSurface {
           message:
             "Prerequisite docs not yet read this session. Call the listed tools (get_analyst_catalog and the domain-docs tool for each referenced table), then resubmit the same SQL.",
           external_agent_messages: [
-            "docs_required is a prerequisite response, not an error — read the requested docs and retry the query.",
+            "docs_required is a prerequisite response, not an error: read the requested docs and retry the query.",
           ],
         },
       };

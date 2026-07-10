@@ -1,5 +1,5 @@
 /**
- * Bedrock judge transport — verified offline with a mocked fetch (no network,
+ * Bedrock judge transport: verified offline with a mocked fetch (no network,
  * no key). Covers the Converse request shape, response parsing, usage capture,
  * env resolution, and that an OpenAI agent + Bedrock judge reads as cross-family.
  */
@@ -42,7 +42,7 @@ describe("toBedrockRequest", () => {
   });
 });
 
-describe("resolveJudgeModel — bedrock", () => {
+describe("resolveJudgeModel: bedrock", () => {
   it("resolves the cross-region inference profile from AWS_BEARER_TOKEN_BEDROCK", () => {
     process.env.JUDGE_TRANSPORT = "bedrock";
     process.env.AWS_BEARER_TOKEN_BEDROCK = "tok";
@@ -64,7 +64,7 @@ describe("resolveJudgeModel — bedrock", () => {
   });
 });
 
-describe("Bedrock judge client — full path (mocked fetch)", () => {
+describe("Bedrock judge client: full path (mocked fetch)", () => {
   it("sends the right Converse request and parses text + usage", async () => {
     process.env.JUDGE_TRANSPORT = "bedrock";
     process.env.AWS_BEARER_TOKEN_BEDROCK = "tok-123";
@@ -120,7 +120,7 @@ const toolResultId = (block: unknown): string | undefined =>
     ? (block as { toolResult: { toolUseId: string } }).toolResult.toolUseId
     : undefined;
 
-describe("toBedrockRequest — tool-calling shape", () => {
+describe("toBedrockRequest: tool-calling shape", () => {
   it("builds toolConfig and maps toolUse (assistant) + toolResult (user) blocks", () => {
     const tools: ToolSpec[] = [
       { name: "execute_analyst_query", description: "run sql", parameters: { type: "object", properties: { sql: { type: "string" } }, required: ["sql"] } },
@@ -162,7 +162,7 @@ describe("toBedrockRequest — tool-calling shape", () => {
   });
 });
 
-describe("resolveAgentModel — Bedrock agent", () => {
+describe("resolveAgentModel: Bedrock agent", () => {
   it("selects Claude on Bedrock under AGENT_TRANSPORT=bedrock", () => {
     process.env.AGENT_TRANSPORT = "bedrock";
     process.env.AWS_BEARER_TOKEN_BEDROCK = "tok";
@@ -178,7 +178,7 @@ describe("resolveAgentModel — Bedrock agent", () => {
   });
 });
 
-describe("Bedrock agent — tool-use round trip (mocked fetch)", () => {
+describe("Bedrock agent: tool-use round trip (mocked fetch)", () => {
   it("emits toolConfig, returns a toolUse, then answers after a toolResult", async () => {
     process.env.AGENT_TRANSPORT = "bedrock";
     process.env.AWS_BEARER_TOKEN_BEDROCK = "tok";

@@ -112,7 +112,7 @@ describe("wire money formats", () => {
 
   it("answer_policy_question is not hijacked by a generic word (meals over flights)", async () => {
     const b = createFixtureBackend();
-    // Mentions 'travel' but is clearly about a meal — must resolve to the meals policy.
+    // Mentions 'travel' but is clearly about a meal: must resolve to the meals policy.
     const res = (await b.call("answer_policy_question", { question: "on a business travel trip, is a $6,750 client dinner within meal policy?", rationale: "policy" })).data as { answer: string };
     expect(res.answer).toMatch(/\$500/);
     expect(res.answer.toLowerCase()).toContain("meal");

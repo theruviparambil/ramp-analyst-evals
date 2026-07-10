@@ -1,5 +1,5 @@
 /**
- * Fixture invariants — the four planted patterns exist, are exact, and are
+ * Fixture invariants: the four planted patterns exist, are exact, and are
  * queryable through the real DuckDB. If any of these break, every eval question
  * built on them is meaningless, so they are the first line of defense.
  */

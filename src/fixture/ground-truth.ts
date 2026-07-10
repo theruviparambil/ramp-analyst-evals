@@ -2,7 +2,7 @@
  * The oracle.
  *
  * Every expected answer in the golden set is computed here, in plain
- * TypeScript, straight from the fixture arrays — deliberately NOT through the
+ * TypeScript, straight from the fixture arrays, deliberately NOT through the
  * agent's DuckDB path. So when a deterministic checker says the agent got
  * $181,203.00, that number was derived by a second, independent code path.
  * A match means two implementations agree, which is what makes it evidence.
@@ -55,7 +55,7 @@ export const topDepartment = departmentSpend[0]!;
 export const userSpend = rank(groupSum(TRANSACTIONS, (t) => nameByUserUuid.get(t.user_uuid)!));
 export const topSpender = userSpend[0]!;
 
-/** Spend by CANONICAL vendor (net) — raw merchant names collapsed via merchant_dim. */
+/** Spend by CANONICAL vendor (net): raw merchant names collapsed via merchant_dim. */
 export const vendorSpend = rank(groupSum(TRANSACTIONS, (t) => normalizedByRawMerchant.get(t.merchant_name) ?? t.merchant_name));
 export const topVendor = vendorSpend[0]!;
 
@@ -69,7 +69,7 @@ export function categoryTotalCents(category: string): number {
 // Same merchant + same amount, within a short window, above a materiality floor.
 // Two rules keep this crisp and business-realistic:
 //   - the window (<= 5 days) excludes the recurring monthly Datadog charge, whose
-//     other hits are weeks apart — only the May 12 / May 15 pair is close enough;
+//     other hits are weeks apart: only the May 12 / May 15 pair is close enough;
 //   - the floor ($500) excludes coincidental small repeats (two $35 rideshares a
 //     few days apart are two real rides, not a double-charge worth investigating).
 // The result is exactly the planted Datadog pair.

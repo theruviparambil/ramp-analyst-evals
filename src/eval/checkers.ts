@@ -1,5 +1,5 @@
 /**
- * Deterministic checkers — the part of the rubric a machine can settle without
+ * Deterministic checkers: the part of the rubric a machine can settle without
  * a judge. Each returns a binary pass plus a short detail string for the report.
  * These back the REQUIRED tier (the agent's SLAs), so the CI gate is fully
  * deterministic and does not depend on an LLM judge.
@@ -97,7 +97,7 @@ export function moneyFormatted(ctx: CheckContext): CheckOutcome {
     : { pass: false, detail: `malformed: ${bad.join(", ")}` };
 }
 
-/** The answer explains its method — references the SQL / query / analyst table it used. */
+/** The answer explains its method: references the SQL / query / analyst table it used. */
 export function citedMethod(ctx: CheckContext): CheckOutcome {
   const hay = ctx.finalAnswer.toLowerCase();
   const cues = ["sql", "query", "queried", "select ", "analyst.", "spend_facts", "group by", "sum("];

@@ -5,7 +5,7 @@
  * discipline as the methodology hub, veriva-eval: there, a judge is validated
  * against human labels with inter-rater agreement (Cohen's / Fleiss' κ), never
  * raw accuracy (which lies on imbalanced label sets). Here the judge is
- * deliberately kept to the ADDITIONAL tier and to BINARY criteria — pass/fail
+ * deliberately kept to the ADDITIONAL tier and to BINARY criteria: pass/fail
  * converges faster and is what you'd hand a κ-validation pass. The κ pipeline
  * itself lives in veriva-eval; this file is where its output would attach:
  * https://github.com/theruviparambil/veriva-eval

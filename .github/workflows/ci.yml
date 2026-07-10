@@ -1,7 +1,7 @@
 name: ci
 
 # Offline gate: typecheck + the full test suite, keyless. The eval gate
-# (npm run eval) is separate — it needs an LLM key to generate trajectories and
+# (npm run eval) is separate: it needs an LLM key to generate trajectories and
 # runs on demand, not here.
 on:
   push:

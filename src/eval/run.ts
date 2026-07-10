@@ -1,5 +1,5 @@
 /**
- * `npm run eval` — run the agent over the golden set, score every answer against
+ * `npm run eval`: run the agent over the golden set, score every answer against
  * the two-tier rubric, print the results, write out/ artifacts, and exit
  * non-zero if the REQUIRED tier drops below the bar (the eval gate).
  *
@@ -71,7 +71,7 @@ async function runSample(agent: LLMClient, judge: LLMClient | undefined, questio
       transcripts.push(renderTranscript(q.question, trajectory, finalAnswer));
       if (!quiet) console.log(`required ${score.requiredPassed}/${score.requiredTotal} ${score.requiredPass ? "PASS" : "FAIL"}, additional ${score.additionalPassed}/${score.additionalEvaluated}  (${trajectory.steps.length} calls, ${((Date.now() - t0) / 1000).toFixed(1)}s)`);
     } catch (err) {
-      // A throw means we never got an answer to grade — infrastructure, not a
+      // A throw means we never got an answer to grade: infrastructure, not a
       // wrong answer. Flag it as an infra error so summarize() excludes it from
       // the pass-rate denominator instead of scoring it as a capability failure.
       const message = err instanceof Error ? err.message : String(err);
@@ -104,11 +104,11 @@ async function main(): Promise<void> {
   const judge: ProviderClient | undefined = args.noJudge ? undefined : createJudgeClient({ maxTokens: 500 }) ?? undefined;
   const questions = GOLDEN.slice(0, args.limit);
 
-  console.log(`ramp-analyst-evals — ${questions.length} question(s) x ${args.samples} sample(s), RAMP_MODE=${process.env.RAMP_MODE ?? "fixture"}`);
+  console.log(`ramp-analyst-evals: ${questions.length} question(s) x ${args.samples} sample(s), RAMP_MODE=${process.env.RAMP_MODE ?? "fixture"}`);
   console.log(`  agent: ${agent.label}`);
   if (judge) {
     const shared = judgeSharesFamilyWithAgent();
-    console.log(`  judge: ${judge.label}  [${shared ? "SAME provider family as agent — self-preference risk; additional tier is non-gating" : "cross-family / independent provider"}]`);
+    console.log(`  judge: ${judge.label}  [${shared ? "SAME provider family as agent: self-preference risk; additional tier is non-gating" : "cross-family / independent provider"}]`);
     if (shared) console.log(`         (set JUDGE_TRANSPORT=bedrock + AWS_BEARER_TOKEN_BEDROCK for a cross-family Claude judge)`);
   } else {
     console.log(`  judge: disabled`);
@@ -117,7 +117,7 @@ async function main(): Promise<void> {
 
   const samples: Sample[] = [];
   for (let i = 0; i < args.samples; i++) {
-    if (args.samples > 1) console.log(`— sample ${i + 1}/${args.samples} —`);
+    if (args.samples > 1) console.log(`[ sample ${i + 1}/${args.samples} ]`);
     samples.push(await runSample(agent, judge, questions, false));
   }
 
@@ -147,7 +147,7 @@ async function main(): Promise<void> {
     console.log("Across samples:");
     console.log(`  REQUIRED tier:   ${pct(meanRequired)} mean  (range ${pct(Math.min(...reqRates))}–${pct(Math.max(...reqRates))} over ${args.samples})`);
     console.log(`  ADDITIONAL tier: ${pct(meanAdditional)} mean  (range ${pct(Math.min(...addRates))}–${pct(Math.max(...addRates))} over ${args.samples})`);
-    console.log(`  Infra errors excluded: ${erroredTotal} of ${samples.length * questions.length} runs${erroredTotal ? " — raise AGENT_TIMEOUT_MS and re-run for a clean result" : ""}\n`);
+    console.log(`  Infra errors excluded: ${erroredTotal} of ${samples.length * questions.length} runs${erroredTotal ? ". Raise AGENT_TIMEOUT_MS and re-run for a clean result" : ""}\n`);
   } else {
     console.log("\n" + renderTable(last.scores, last.summary) + "\n");
     if (erroredTotal) console.log(`Infra errors excluded: ${erroredTotal}\n`);
@@ -192,10 +192,10 @@ async function main(): Promise<void> {
   console.log(`Artifacts written to ${args.outDir}/ (results.jsonl, summary.json, transcripts.md)`);
 
   if (!passesGate({ ...mergedSummary, requiredTierPassRate: meanRequired }, args.requiredBar)) {
-    console.error(`\nEVAL GATE: REQUIRED tier ${pct(meanRequired)} < bar ${pct(args.requiredBar)} — failing.`);
+    console.error(`\nEVAL GATE: REQUIRED tier ${pct(meanRequired)} < bar ${pct(args.requiredBar)}. Failing.`);
     process.exit(1);
   }
-  console.log(`\nEVAL GATE: REQUIRED tier ${pct(meanRequired)} ≥ bar ${pct(args.requiredBar)} — pass.`);
+  console.log(`\nEVAL GATE: REQUIRED tier ${pct(meanRequired)} ≥ bar ${pct(args.requiredBar)}. Pass.`);
 }
 
 main().catch((err) => {

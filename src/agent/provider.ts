@@ -1,5 +1,5 @@
 /**
- * Provider-agnostic LLM client with tool-calling — built on `fetch`, no vendor
+ * Provider-agnostic LLM client with tool-calling, built on `fetch`, no vendor
  * SDKs (mirroring veriva-eval's zero-SDK ethos). Three transports cover the field:
  *
  *   - openai:    OpenAI-compatible /chat/completions with `tools` (also serves
@@ -14,7 +14,7 @@
  * The agent model is resolved from the environment: AGENT_TRANSPORT=bedrock (with
  * AWS_BEARER_TOKEN_BEDROCK) selects Claude on Bedrock; otherwise precedence is
  * OPENROUTER > OPENAI > ANTHROPIC, with AGENT_MODEL as an override. Tests never
- * touch the network — they use the scripted client, or a mocked fetch.
+ * touch the network: they use the scripted client, or a mocked fetch.
  */
 
 import type { AssistantTurn, LLMClient, Message, ToolCallRequest, ToolSpec } from "./types.js";
@@ -106,7 +106,7 @@ function differentFromAgent(agentModel: string): string {
 /**
  * Resolve the JUDGE model. One-env-var swap for a truly independent judge:
  *   - JUDGE_TRANSPORT=bedrock runs the judge on AWS Bedrock (Converse API) with
- *     AWS_BEARER_TOKEN_BEDROCK — a real cross-FAMILY judge (e.g. Claude judging
+ *     AWS_BEARER_TOKEN_BEDROCK, a real cross-FAMILY judge (e.g. Claude judging
  *     GPT). JUDGE_MODEL defaults to the cross-region inference profile
  *     `us.anthropic.claude-sonnet-4-6` (the `us.` prefix is required).
  *   - JUDGE_API_KEY (+ optional JUDGE_TRANSPORT=anthropic, JUDGE_BASE_URL) runs
@@ -214,7 +214,7 @@ function buildClient(resolved: Resolved, opts: ProviderOptions): ProviderClient 
 export function createProviderClient(opts: ProviderOptions = {}): ProviderClient {
   const resolved = resolveAgentModel();
   if (!resolved) {
-    throw new Error("no LLM key set — provide OPENROUTER_API_KEY, OPENAI_API_KEY, or ANTHROPIC_API_KEY (see .env.example)");
+    throw new Error("no LLM key set: provide OPENROUTER_API_KEY, OPENAI_API_KEY, or ANTHROPIC_API_KEY (see .env.example)");
   }
   return buildClient(resolved, {
     ...opts,
@@ -224,7 +224,7 @@ export function createProviderClient(opts: ProviderOptions = {}): ProviderClient
   });
 }
 
-/** The judge client — a separate model (and optionally a separate provider). Null if no key. */
+/** The judge client, a separate model (and optionally a separate provider). Null if no key. */
 export function createJudgeClient(opts: ProviderOptions = {}): ProviderClient | null {
   const resolved = resolveJudgeModel();
   if (!resolved) return null;

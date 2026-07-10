@@ -1,7 +1,7 @@
 /**
- * Scripted LLM client — the offline test double (promptfoo's _ScriptedClient
+ * Scripted LLM client: the offline test double (promptfoo's _ScriptedClient
  * pattern). It plays back a fixed sequence of assistant turns, so the whole
- * agent loop — tool calls, self-correction, final answer — runs with no network
+ * agent loop (tool calls, self-correction, final answer) runs with no network
  * and no API key. The tools it "calls" still hit the real fixture backend and
  * real DuckDB, so a scripted run exercises the genuine handshake and SQL path.
  */
@@ -35,7 +35,7 @@ export class ScriptedClient implements LLMClient {
       : this.script(messages, this.step);
     this.step += 1;
     if (!turn) {
-      throw new Error(`ScriptedClient exhausted at step ${this.step - 1} — the script has no turn for this step`);
+      throw new Error(`ScriptedClient exhausted at step ${this.step - 1}: the script has no turn for this step`);
     }
     return turn;
   }

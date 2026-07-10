@@ -4,11 +4,11 @@
  * Names, descriptions, and parameter schemas mirror Ramp's public agent-tool
  * surface (agent-tools/execute-analyst-query, list-users, get-transactions,
  * search-vendors, answer-policy-question, and the analyst catalog/docs tools).
- * Every tool takes a required `rationale` — a non-empty string — exactly as the
+ * Every tool takes a required `rationale`, a non-empty string, exactly as the
  * real API does; omitting it is a validation error here just like a 422 there.
  *
  * Each tool is classified read vs write. The agent is only ever handed the READ
- * tools, and the eval asserts no write tool was called — the read-only invariant.
+ * tools, and the eval asserts no write tool was called: the read-only invariant.
  * A single write tool (update_merchant_restrictions) is registered but not
  * exposed, so the classification is real and the invariant is testable.
  */
@@ -40,7 +40,7 @@ export interface ToolDef {
   description: string;
   /** JSON Schema handed to the model for function-calling. */
   parameters: Record<string, unknown>;
-  /** Runtime validator (validate tool args before executing — security floor). */
+  /** Runtime validator (validate tool args before executing, security floor). */
   argsSchema: z.ZodTypeAny;
 }
 
@@ -176,7 +176,7 @@ export const TOOLS: ToolDef[] = [
     ),
     argsSchema: z.object({ question: z.string().min(1), include_restrictions: z.boolean().optional(), rationale }),
   },
-  // ── Write tool — registered for classification, never exposed to the agent ──
+  // ── Write tool: registered for classification, never exposed to the agent ──
   {
     name: "update_merchant_restrictions",
     kind: "write",

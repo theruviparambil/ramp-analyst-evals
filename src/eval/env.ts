@@ -11,7 +11,7 @@ export function loadDotenv(path = resolve(process.cwd(), ".env")): void {
   try {
     text = readFileSync(path, "utf8");
   } catch {
-    return; // no .env — rely on the ambient environment
+    return; // no .env, rely on the ambient environment
   }
   for (const line of text.split("\n")) {
     const trimmed = line.trim();

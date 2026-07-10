@@ -1,5 +1,5 @@
 /**
- * Live backend — the documented seam to Ramp's real MCP.
+ * Live backend: the documented seam to Ramp's real MCP.
  *
  * The whole point of the RampToolSurface interface is that swapping the fixture
  * for the real thing is a backend change and nothing else: the agent loop, the
@@ -16,7 +16,7 @@
  *                argument schemas already match this repo's registry, so the
  *                results drop straight into the same agent loop.
  *   - Money:     the wire keeps Ramp's real formats (transaction amounts as
- *                strings, bill amounts numeric) — same as the fixture.
+ *                strings, bill amounts numeric), same as the fixture.
  */
 
 import type { RampToolSurface, ToolResult } from "./tools.js";

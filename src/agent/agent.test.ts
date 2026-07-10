@@ -1,7 +1,7 @@
 /**
  * The agent loop, driven entirely offline by a scripted LLM client. The tool
  * calls still hit the real fixture backend + DuckDB, so these exercise the
- * genuine handshake and SQL paths — no network, no key.
+ * genuine handshake and SQL paths: no network, no key.
  */
 import { describe, expect, it } from "vitest";
 import { runAgent } from "./agent.js";
@@ -11,7 +11,7 @@ import { readOnly } from "../eval/checkers.js";
 
 const NET_SQL = "SELECT SUM(sf.amount) AS net FROM analyst.spend_facts sf";
 
-describe("agent loop — happy path", () => {
+describe("agent loop: happy path", () => {
   it("does catalog -> docs -> query -> answer and stays read-only", async () => {
     const client = new ScriptedClient([
       toolTurn("plan", [{ name: "get_analyst_catalog", args: { rationale: "discover tables" } }]),
@@ -33,7 +33,7 @@ describe("agent loop — happy path", () => {
   });
 });
 
-describe("agent loop — self-correction", () => {
+describe("agent loop: self-correction", () => {
   it("recovers from a docs_required response by reading the docs and retrying", async () => {
     const client = new ScriptedClient([
       toolTurn("query too early", [{ name: "execute_analyst_query", args: { sql: NET_SQL, rationale: "net" } }]),
@@ -68,7 +68,7 @@ describe("agent loop — self-correction", () => {
   });
 });
 
-describe("agent loop — read-only invariant", () => {
+describe("agent loop: read-only invariant", () => {
   it("records a write attempt and the invariant catches it", async () => {
     const client = new ScriptedClient([
       toolTurn("misbehave", [{ name: "update_merchant_restrictions", args: { rationale: "should not do this" } }]),
@@ -82,7 +82,7 @@ describe("agent loop — read-only invariant", () => {
   });
 });
 
-describe("agent loop — budget", () => {
+describe("agent loop: budget", () => {
   it("stops at the tool-call budget instead of looping forever", async () => {
     const client = new ScriptedClient(() => toolTurn("again", [{ name: "get_analyst_catalog", args: { rationale: "loop" } }]));
     const { trajectory } = await runAgent("q", { client, surface: createFixtureBackend(), maxToolCalls: 3 });

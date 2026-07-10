@@ -1,5 +1,5 @@
 /**
- * The analyst artifact — a real, in-process DuckDB built from the fixture.
+ * The analyst artifact: a real, in-process DuckDB built from the fixture.
  *
  * `execute_analyst_query` runs genuine DuckDB SQL against these tables, so the
  * agent's queries either work or fail for real reasons (a bad column, a missing
@@ -8,11 +8,11 @@
  * `analyst.spend_facts` and dimensions hang off it.
  *
  * Tables built here (schema-faithful to Ramp's `analyst.*` naming):
- *   analyst.spend_facts     — one row per card spend event (money as DECIMAL $)
- *   analyst.user_dim        — employees (join for names / department / active)
- *   analyst.department_dim  — departments
- *   analyst.merchant_dim    — merchants + normalized_merchant_name (variant key)
- *   analyst.ap_bill_facts   — accounts-payable bills (money as DECIMAL $)
+ *   analyst.spend_facts:      one row per card spend event (money as DECIMAL $)
+ *   analyst.user_dim:         employees (join for names / department / active)
+ *   analyst.department_dim:   departments
+ *   analyst.merchant_dim:     merchants + normalized_merchant_name (variant key)
+ *   analyst.ap_bill_facts:    accounts-payable bills (money as DECIMAL $)
  *
  * Everything is READ-ONLY: the connection only ever runs SELECTs the tool layer
  * has validated, and there is no write path exposed to the agent.
@@ -137,7 +137,7 @@ export class AnalystArtifact {
 
   /**
    * Execute read-only SQL and return normalized rows. Throws on any SQL error
-   * (bad column, syntax, aggregation) — the caller surfaces the message to the
+   * (bad column, syntax, aggregation), the caller surfaces the message to the
    * agent so it can repair and retry.
    */
   async query(sql: string): Promise<QueryResult> {

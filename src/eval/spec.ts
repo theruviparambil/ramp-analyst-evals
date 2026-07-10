@@ -3,7 +3,7 @@
  *
  * Two tiers, echoing Hebbia's framing: REQUIRED criteria are the agent's SLAs
  * (get the number right, stay read-only, ground it in a real tool call). A
- * required-only pass is acceptable. ADDITIONAL criteria are headroom — the
+ * required-only pass is acceptable. ADDITIONAL criteria are headroom: the
  * advanced behaviors (cite the SQL, catch the vendor variant, flag the anomaly,
  * format money correctly, take a clean reasoning path). Every criterion is
  * BINARY: pass or fail. Binary converges faster for judges and is what a κ
@@ -15,11 +15,11 @@ import type { CheckContext, CheckOutcome } from "./checkers.js";
 export type Tier = "required" | "additional";
 
 /**
- * INVARIANT vs OBSERVED — an honesty distinction.
+ * INVARIANT vs OBSERVED: an honesty distinction.
  *
  * Some checks CANNOT fail when the surface is behaving, because the tool surface
  * enforces them (the docs handshake is refused otherwise; write tools aren't
- * even exposed). Calling those "the agent did well" is misleading — they're
+ * even exposed). Calling those "the agent did well" is misleading: they're
  * guarantees of the harness, not evidence about the model. We tag them
  * "invariant" and report them apart from "observed" behavior, which a lazy or
  * wrong agent genuinely can fail.
@@ -41,7 +41,7 @@ export interface Criterion {
 export interface GoldenQuestion {
   id: string;
   question: string;
-  /** Compact expected-answer statement — shown to the judge and printed in reports. */
+  /** Compact expected-answer statement, shown to the judge and printed in reports. */
   expected: string;
   /** Instructions appended to the question telling the agent what JSON to emit. */
   answerInstructions: string;

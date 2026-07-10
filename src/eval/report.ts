@@ -1,5 +1,5 @@
 /**
- * Report formatting — the console table and the Markdown transcript the README
+ * Report formatting: the console table and the Markdown transcript the README
  * quotes from. Kept separate from the runner so the shapes are easy to test.
  */
 
@@ -38,7 +38,7 @@ export function renderTranscript(question: string, trajectory: Trajectory, final
   const out: string[] = [];
   out.push(`### ${question}`, "");
   for (const s of trajectory.steps) {
-    out.push(`**${s.index + 1}. \`${s.name}\`** — _${s.rationale}_`);
+    out.push(`**${s.index + 1}. \`${s.name}\`**: _${s.rationale}_`);
     if (s.name === "execute_analyst_query" && typeof s.args?.sql === "string") {
       out.push("```sql", s.args.sql.trim(), "```");
     }

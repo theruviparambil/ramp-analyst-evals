@@ -43,7 +43,7 @@ describe("scoreQuestion", () => {
     expect(s.additionalPass).toBe(false);
   });
 
-  it("skips judge criteria (pass=null) when no judge is available — required tier unaffected", async () => {
+  it("skips judge criteria (pass=null) when no judge is available: required tier unaffected", async () => {
     const s = await scoreQuestion(question, "The total is $1.00.", emptyTraj, {});
     expect(s.requiredPass).toBe(true);
     const judgeResult = s.results.find((r) => r.id === "add.faithful");

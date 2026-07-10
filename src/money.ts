@@ -1,7 +1,7 @@
 /**
  * Money helpers.
  *
- * Everything is stored and summed as integer cents so aggregates are exact —
+ * Everything is stored and summed as integer cents so aggregates are exact:
  * no float drift, ever. We only cross into other representations at the edges:
  *
  *   - The `get_user_transactions` tool mirrors Ramp's wire format, where card

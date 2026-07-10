@@ -1,5 +1,5 @@
 /**
- * `npm run ask -- "your question"` — run the analyst agent once against the
+ * `npm run ask -- "your question"`: run the analyst agent once against the
  * fixture (or RAMP_MODE=live) and print the trajectory + answer. Handy for
  * poking at the agent outside the eval. Needs one API key.
  */
@@ -14,7 +14,7 @@ async function main(): Promise<void> {
     || "Give me a Q2 spend summary: total, top vendor, and anything unusual.";
 
   if (!resolveAgentModel()) {
-    console.error("No LLM key set — see .env.example. (The test suite runs without a key: `npm test`.)");
+    console.error("No LLM key set. See .env.example. (The test suite runs without a key: `npm test`.)");
     process.exit(2);
   }
 
@@ -25,7 +25,7 @@ async function main(): Promise<void> {
   const { trajectory, finalAnswer } = await runAgent(question, { client, surface });
   for (const s of trajectory.steps) {
     const flag = s.isError ? "✗" : "✓";
-    console.log(`  ${flag} [${s.index}] ${s.name} — ${s.rationale}`);
+    console.log(`  ${flag} [${s.index}] ${s.name}: ${s.rationale}`);
     if (s.name === "execute_analyst_query" && typeof s.args?.sql === "string") {
       console.log(`      SQL: ${s.args.sql.replace(/\s+/g, " ").trim().slice(0, 160)}`);
     }

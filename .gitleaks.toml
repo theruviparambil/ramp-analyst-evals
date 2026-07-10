@@ -8,7 +8,7 @@ title = "ramp-analyst-evals gitleaks config"
 useDefault = true
 
 [allowlist]
-description = "Generated eval receipts from the synthetic fixture — no secrets."
+description = "Generated eval receipts from the synthetic fixture, no secrets."
 paths = [
   '''out/.*transcripts\.md''',
   '''out/.*results\.jsonl''',

@@ -1,28 +1,28 @@
 /**
- * The synthetic company — this repo's ground truth.
+ * The synthetic company: this repo's ground truth.
  *
  * One demo business ("Vela Robotics"), ~15 users across 6 departments, and
  * ~200 card transactions over Q2 2026 (2026-04-01 .. 2026-06-30), plus a few
  * vendors and AP bills. Everything is generated deterministically (fixed seed),
  * so `npm test`, `npm run ground-truth`, and every eval run see byte-identical
- * data. Amounts are integer cents internally — no float drift.
+ * data. Amounts are integer cents internally, no float drift.
  *
  * Four checkable patterns are PLANTED so the analyst has something real to find,
  * and so every eval question has an exact expected answer (computed by the
  * independent oracle in ./ground-truth.ts, never by the agent's own SQL path):
  *
- *   (a) DUPLICATE CHARGE   — Datadog $8,400.00 hits twice, 2026-05-12 & -05-15.
- *   (b) VENDOR VARIANT     — "Delta Air Lines" and "Delta Airlines" are the same
+ *   (a) DUPLICATE CHARGE:    Datadog $8,400.00 hits twice, 2026-05-12 & -05-15.
+ *   (b) VENDOR VARIANT:      "Delta Air Lines" and "Delta Airlines" are the same
  *                            airline under two un-normalized spellings.
- *   (c) OUT-OF-POLICY      — a $6,750.00 Nobu dinner, flagged out_of_policy
+ *   (c) OUT-OF-POLICY:       a $6,750.00 Nobu dinner, flagged out_of_policy
  *                            (Meals policy caps single transactions at $500).
- *   (d) MONTH-OVER-MONTH   — Advertising spend jumps May $12,500 -> June $50,000
+ *   (d) MONTH-OVER-MONTH:    Advertising spend jumps May $12,500 -> June $50,000
  *       SPIKE                (4.0x), driven by a June Google Ads campaign.
  */
 
 // ─── Deterministic primitives ───────────────────────────────────────────────
 
-/** mulberry32 — a tiny deterministic PRNG. Same seed => same stream, forever. */
+/** mulberry32: a tiny deterministic PRNG. Same seed => same stream, forever. */
 function mulberry32(seed: number): () => number {
   let a = seed >>> 0;
   return () => {
@@ -312,10 +312,10 @@ for (const month of [4, 5, 6]) {
 }
 
 // -- Datadog: normal monthly $8,400, but PLANTED DUPLICATE in May -------------
-addTxn({ merchant: "Datadog", month: 4, day: 3, amountCents: 840000, user: priya, program: "Software", memo: "Datadog observability — monthly" });
-addTxn({ merchant: "Datadog", month: 5, day: 12, amountCents: 840000, user: priya, program: "Software", memo: "Datadog observability — monthly" });
-addTxn({ merchant: "Datadog", month: 5, day: 15, amountCents: 840000, user: priya, program: "Software", memo: "Datadog observability — monthly" }); // (a) duplicate charge
-addTxn({ merchant: "Datadog", month: 6, day: 4, amountCents: 840000, user: priya, program: "Software", memo: "Datadog observability — monthly" });
+addTxn({ merchant: "Datadog", month: 4, day: 3, amountCents: 840000, user: priya, program: "Software", memo: "Datadog observability, monthly" });
+addTxn({ merchant: "Datadog", month: 5, day: 12, amountCents: 840000, user: priya, program: "Software", memo: "Datadog observability, monthly" });
+addTxn({ merchant: "Datadog", month: 5, day: 15, amountCents: 840000, user: priya, program: "Software", memo: "Datadog observability, monthly" }); // (a) duplicate charge
+addTxn({ merchant: "Datadog", month: 6, day: 4, amountCents: 840000, user: priya, program: "Software", memo: "Datadog observability, monthly" });
 
 // -- Cloud infrastructure (Engineering) ---------------------------------------
 const CLOUD: Array<[string, number[], UserRecord]> = [
@@ -339,23 +339,23 @@ const ADVERTISING: Array<[string, [number, number, number], UserRecord]> = [
   ["Meta Ads", [200000, 200000, 800000], leo],
 ];
 for (const [merchant, [apr, may, jun], user] of ADVERTISING) {
-  addTxn({ merchant, month: 4, day: pickDay(5, 12), amountCents: apr, user, program: "Marketing", memo: `${merchant} — brand & demand` });
-  addTxn({ merchant, month: 5, day: pickDay(5, 12), amountCents: may, user, program: "Marketing", memo: `${merchant} — brand & demand` });
-  addTxn({ merchant, month: 6, day: pickDay(10, 20), amountCents: jun, user, program: "Marketing", memo: merchant === "Google Ads" ? "Google Ads — Q3 product launch campaign" : `${merchant} — launch support` });
+  addTxn({ merchant, month: 4, day: pickDay(5, 12), amountCents: apr, user, program: "Marketing", memo: `${merchant}: brand & demand` });
+  addTxn({ merchant, month: 5, day: pickDay(5, 12), amountCents: may, user, program: "Marketing", memo: `${merchant}: brand & demand` });
+  addTxn({ merchant, month: 6, day: pickDay(10, 20), amountCents: jun, user, program: "Marketing", memo: merchant === "Google Ads" ? "Google Ads: Q3 product launch campaign" : `${merchant}: launch support` });
 }
 
 // -- Airlines incl. PLANTED Delta variant (two spellings, same airline) -------
 const jordan = userByName("Jordan", "Reyes");
 const elena = userByName("Elena", "Fisher");
 const alex = userByName("Alex", "Moreau");
-addTxn({ merchant: "Delta Air Lines", month: 4, day: 9, amountCents: 120450, user: jordan, program: "Travel", memo: "Flight — customer visit (ATL)" });
-addTxn({ merchant: "Delta Air Lines", month: 5, day: 21, amountCents: 98000, user: alex, program: "Travel", memo: "Flight — board offsite" });
-addTxn({ merchant: "Delta Airlines", month: 4, day: 17, amountCents: 64230, user: elena, program: "Travel", memo: "Flight — prospect onsite" }); // (b) variant spelling
-addTxn({ merchant: "Delta Airlines", month: 5, day: 6, amountCents: 115000, user: jordan, program: "Travel", memo: "Flight — regional sales tour" });
-addTxn({ merchant: "Delta Airlines", month: 6, day: 12, amountCents: 41020, user: elena, program: "Travel", memo: "Flight — conference" });
-addTxn({ merchant: "United Airlines", month: 4, day: 14, amountCents: 82000, user: alex, program: "Travel", memo: "Flight — investor meeting" });
-addTxn({ merchant: "United Airlines", month: 5, day: 19, amountCents: 134000, user: jordan, program: "Travel", memo: "Flight — sales kickoff" });
-addTxn({ merchant: "United Airlines", month: 6, day: 8, amountCents: 56000, user: elena, program: "Travel", memo: "Flight — customer QBR" });
+addTxn({ merchant: "Delta Air Lines", month: 4, day: 9, amountCents: 120450, user: jordan, program: "Travel", memo: "Flight: customer visit (ATL)" });
+addTxn({ merchant: "Delta Air Lines", month: 5, day: 21, amountCents: 98000, user: alex, program: "Travel", memo: "Flight: board offsite" });
+addTxn({ merchant: "Delta Airlines", month: 4, day: 17, amountCents: 64230, user: elena, program: "Travel", memo: "Flight: prospect onsite" }); // (b) variant spelling
+addTxn({ merchant: "Delta Airlines", month: 5, day: 6, amountCents: 115000, user: jordan, program: "Travel", memo: "Flight: regional sales tour" });
+addTxn({ merchant: "Delta Airlines", month: 6, day: 12, amountCents: 41020, user: elena, program: "Travel", memo: "Flight: conference" });
+addTxn({ merchant: "United Airlines", month: 4, day: 14, amountCents: 82000, user: alex, program: "Travel", memo: "Flight: investor meeting" });
+addTxn({ merchant: "United Airlines", month: 5, day: 19, amountCents: 134000, user: jordan, program: "Travel", memo: "Flight: sales kickoff" });
+addTxn({ merchant: "United Airlines", month: 6, day: 8, amountCents: 56000, user: elena, program: "Travel", memo: "Flight: customer QBR" });
 
 // -- PLANTED out-of-policy dinner ---------------------------------------------
 addTxn({
@@ -365,7 +365,7 @@ addTxn({
   amountCents: 675000,
   user: jordan,
   program: "Travel",
-  memo: "Client dinner — enterprise prospect (8 guests)",
+  memo: "Client dinner: enterprise prospect (8 guests)",
   policy: "out_of_policy",
 }); // (c) out-of-policy: exceeds the $500 single-transaction meals cap
 
@@ -387,12 +387,12 @@ const NOISE: NoiseSpec[] = [
   { merchant: "DoorDash", program: "Meals", perMonth: 7, band: [3200, 7200], deptPool: ["eng", "sales", "mkt", "ops"], memo: "Team meal delivery" },
   { merchant: "Uber", program: "Travel", perMonth: 9, band: [1400, 6800], deptPool: ["sales", "exec", "mkt"], memo: "Rideshare" },
   { merchant: "Lyft", program: "Travel", perMonth: 6, band: [1200, 5200], deptPool: ["sales", "exec"], memo: "Rideshare" },
-  { merchant: "Marriott", program: "Travel", perMonth: 2, band: [24000, 62000], deptPool: ["sales", "exec"], memo: "Hotel — business travel" },
-  { merchant: "Airbnb", program: "Travel", perMonth: 2, band: [18000, 44000], deptPool: ["eng", "mkt"], memo: "Lodging — offsite" },
+  { merchant: "Marriott", program: "Travel", perMonth: 2, band: [24000, 62000], deptPool: ["sales", "exec"], memo: "Hotel: business travel" },
+  { merchant: "Airbnb", program: "Travel", perMonth: 2, band: [18000, 44000], deptPool: ["eng", "mkt"], memo: "Lodging: offsite" },
   { merchant: "Staples", program: "G&A", perMonth: 4, band: [4000, 16000], deptPool: ["ops", "fin"], memo: "Office supplies" },
   { merchant: "Amazon", program: "G&A", perMonth: 6, band: [2500, 18000], deptPool: ["ops", "fin", "eng"], memo: "Office / equipment" },
-  { merchant: "Apple", program: "Equipment", perMonth: 1, band: [120000, 260000], deptPool: ["eng", "exec"], memo: "Hardware — laptop" },
-  { merchant: "Dell", program: "Equipment", perMonth: 1, band: [90000, 180000], deptPool: ["eng", "ops"], memo: "Hardware — workstation" },
+  { merchant: "Apple", program: "Equipment", perMonth: 1, band: [120000, 260000], deptPool: ["eng", "exec"], memo: "Hardware: laptop" },
+  { merchant: "Dell", program: "Equipment", perMonth: 1, band: [90000, 180000], deptPool: ["eng", "ops"], memo: "Hardware: workstation" },
 ];
 
 for (const spec of NOISE) {
@@ -407,8 +407,8 @@ for (const spec of NOISE) {
 }
 
 // -- Two refunds (negative amounts) -------------------------------------------
-addTxn({ merchant: "Marriott", month: 4, day: 22, amountCents: -41200, user: alex, program: "Travel", memo: "Refund — cancelled hotel night" });
-addTxn({ merchant: "Amazon", month: 5, day: 9, amountCents: -8950, user: userByName("Nina", "Patel"), program: "G&A", memo: "Refund — returned office chair" });
+addTxn({ merchant: "Marriott", month: 4, day: 22, amountCents: -41200, user: alex, program: "Travel", memo: "Refund: cancelled hotel night" });
+addTxn({ merchant: "Amazon", month: 5, day: 9, amountCents: -8950, user: userByName("Nina", "Patel"), program: "G&A", memo: "Refund: returned office chair" });
 
 export const TRANSACTIONS: TxnRecord[] = TXNS;
 
@@ -444,14 +444,14 @@ export const BILLS: BillRecord[] = BILL_SEEDS.map((b) => ({
   payment_date: b.paid,
 }));
 
-// ─── Vendors (payees) for search_vendors — bill payees + notable merchants ────
+// ─── Vendors (payees) for search_vendors: bill payees + notable merchants ────
 
 const VENDOR_NAMES: string[] = [
   ...BILL_SEEDS.map((b) => b.payee),
   "Datadog",
   "Amazon Web Services",
   "Delta Air Lines",
-  "Delta Airlines", // both spellings exist as distinct payee records — the variant, visible here too
+  "Delta Airlines", // both spellings exist as distinct payee records, the variant, visible here too
   "Google Ads",
   "Figma",
 ];

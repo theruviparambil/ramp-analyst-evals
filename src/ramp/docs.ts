@@ -5,7 +5,7 @@
  * *DomainDocs tools, and they are the *semantic source of truth* the agent is
  * told to read before writing SQL (don't introspect DuckDB metadata, don't
  * guess column names). We reproduce that contract: the docs describe the grain,
- * the money/date columns, the join keys, and — critically — the caveat that
+ * the money/date columns, the join keys, and, critically, the caveat that
  * `merchant_name` is un-normalized, which is how a docs-reading agent learns to
  * collapse the Delta Air Lines / Delta Airlines variant.
  *
@@ -73,15 +73,15 @@ const TABLE_DOCS: Record<AnalystTableName, TableDoc> = {
       { column_name: "amount", description: "Signed DECIMAL in whole dollars (USD). Positive = spend, negative = refund/credit. Sum directly for net spend; filter amount > 0 for gross." },
       { column_name: "currency", description: "ISO currency code. All rows in this fixture are USD." },
       { column_name: "merchant_uuid", description: "FK to merchant_dim.merchant_uuid." },
-      { column_name: "merchant_name", description: "Merchant name AS CAPTURED at authorization. NOT normalized — the same vendor can appear under multiple spellings. For canonical vendor totals, join merchant_dim and group by normalized_merchant_name." },
+      { column_name: "merchant_name", description: "Merchant name AS CAPTURED at authorization. NOT normalized: the same vendor can appear under multiple spellings. For canonical vendor totals, join merchant_dim and group by normalized_merchant_name." },
       { column_name: "merchant_category", description: "Merchant category label, e.g. 'SaaS / Software', 'Advertising', 'Airlines'." },
-      { column_name: "user_uuid", description: "FK to user_dim.user_uuid — the employee who made the charge." },
-      { column_name: "department_uuid", description: "FK to department_dim.department_uuid — the spending user's department at time of charge." },
+      { column_name: "user_uuid", description: "FK to user_dim.user_uuid, the employee who made the charge." },
+      { column_name: "department_uuid", description: "FK to department_dim.department_uuid, the spending user's department at time of charge." },
       { column_name: "policy_status", description: "System policy assessment: 'in_policy' or 'out_of_policy'." },
       { column_name: "spend_program", description: "Internal spend program / allocation bucket, e.g. 'Software', 'Cloud', 'Travel', 'Marketing', 'G&A'." },
     ],
     sections: [
-      { title: "Grain", content: "One row per settled card spend event. Bill/AP spend is NOT here — see analyst.ap_bill_facts. There is no unified spend table; card and AP are separate." },
+      { title: "Grain", content: "One row per settled card spend event. Bill/AP spend is NOT here. See analyst.ap_bill_facts. There is no unified spend table; card and AP are separate." },
       { title: "Money", content: "amount is a signed DECIMAL in dollars. Net spend = SUM(amount). Gross spend = SUM(amount) FILTER (WHERE amount > 0). Refunds are the negative rows." },
       { title: "Identity caveats", content: "Join to dims for human-readable labels: user_dim for names/role/active status, department_dim for department name, merchant_dim for the canonical (normalized) vendor name. merchant_name on this table is raw and may contain variant spellings." },
     ],
@@ -186,7 +186,7 @@ export function getCatalog(): { analyst_tables: CatalogTable[]; artifact: Record
     analyst_tables,
     artifact: {
       artifact_instance_id: "default",
-      artifact_instance_name: "Vela Robotics — default",
+      artifact_instance_name: "Vela Robotics (default)",
       is_default_artifact_instance: true,
       build_status: "succeeded",
       artifact_schema_version: "1.0.0",

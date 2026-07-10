@@ -1,7 +1,7 @@
 /**
  * Harness robustness: a slow/flaky request is infrastructure, not a wrong answer.
  * These verify the configurable timeout, transient-error classification, and the
- * retry loop — all offline with a mocked fetch, no key.
+ * retry loop: all offline with a mocked fetch, no key.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createProviderClient, isTransientError, resolveTimeoutMs, TransportError } from "./provider.js";
@@ -64,7 +64,7 @@ function openaiAgent() {
 }
 const NO_TOOLS: ToolSpec[] = [];
 
-describe("retry loop — infra failures are retried, not scored as answers", () => {
+describe("retry loop: infra failures are retried, not scored as answers", () => {
   it("retries a transient 503 then succeeds; usage counts only the success", async () => {
     let n = 0;
     vi.stubGlobal("fetch", async () => { n += 1; return n === 1 ? errResponse(503) : OK_RESPONSE; });
