@@ -1,0 +1,339 @@
+{
+  "startedAt": "2026-07-10T00:57:47.996Z",
+  "model": "openai:gpt-5.1",
+  "judge": "judge:gpt-4.1",
+  "judgeSharesFamily": true,
+  "tag": "eval",
+  "requiredBar": 0.9,
+  "samples": 5,
+  "requiredTier": {
+    "mean": 0.85,
+    "min": 0.75,
+    "max": 0.9166666666666666,
+    "perSample": [
+      0.75,
+      0.9166666666666666,
+      0.8333333333333334,
+      0.9166666666666666,
+      0.8333333333333334
+    ]
+  },
+  "additionalTier": {
+    "mean": 0.4666666666666667,
+    "min": 0.3333333333333333,
+    "max": 0.5833333333333334,
+    "perSample": [
+      0.4166666666666667,
+      0.3333333333333333,
+      0.5833333333333334,
+      0.5,
+      0.5
+    ]
+  },
+  "perQuestion": [
+    {
+      "id": "q01_total_net_spend",
+      "samples": 5,
+      "requiredPass": 5,
+      "additionalPass": 5
+    },
+    {
+      "id": "q02_top_vendor",
+      "samples": 5,
+      "requiredPass": 5,
+      "additionalPass": 1
+    },
+    {
+      "id": "q03_spend_by_department",
+      "samples": 5,
+      "requiredPass": 5,
+      "additionalPass": 4
+    },
+    {
+      "id": "q04_duplicate_charge",
+      "samples": 5,
+      "requiredPass": 2,
+      "additionalPass": 0
+    },
+    {
+      "id": "q05_vendor_variant",
+      "samples": 5,
+      "requiredPass": 5,
+      "additionalPass": 4
+    },
+    {
+      "id": "q06_out_of_policy",
+      "samples": 5,
+      "requiredPass": 1,
+      "additionalPass": 0
+    },
+    {
+      "id": "q07_mom_spike",
+      "samples": 5,
+      "requiredPass": 5,
+      "additionalPass": 0
+    },
+    {
+      "id": "q08_top_spender",
+      "samples": 5,
+      "requiredPass": 5,
+      "additionalPass": 5
+    },
+    {
+      "id": "q09_software_total",
+      "samples": 5,
+      "requiredPass": 5,
+      "additionalPass": 0
+    },
+    {
+      "id": "q10_refunds",
+      "samples": 5,
+      "requiredPass": 3,
+      "additionalPass": 2
+    },
+    {
+      "id": "q11_open_bills",
+      "samples": 5,
+      "requiredPass": 5,
+      "additionalPass": 4
+    },
+    {
+      "id": "q12_active_users",
+      "samples": 5,
+      "requiredPass": 5,
+      "additionalPass": 3
+    }
+  ],
+  "usage": {
+    "calls": 271,
+    "promptTokens": 707855,
+    "completionTokens": 31856,
+    "estCostUsd": 1.20337875
+  },
+  "criterionPassRates": [
+    {
+      "id": "req.read_only",
+      "tier": "required",
+      "nature": "invariant",
+      "evaluated": 60,
+      "passed": 60,
+      "rate": 1
+    },
+    {
+      "id": "req.rationale",
+      "tier": "required",
+      "nature": "invariant",
+      "evaluated": 60,
+      "passed": 60,
+      "rate": 1
+    },
+    {
+      "id": "req.grounded",
+      "tier": "required",
+      "nature": "invariant",
+      "evaluated": 60,
+      "passed": 56,
+      "rate": 0.9333333333333333
+    },
+    {
+      "id": "req.value",
+      "tier": "required",
+      "nature": "observed",
+      "evaluated": 60,
+      "passed": 51,
+      "rate": 0.85
+    },
+    {
+      "id": "add.money_format",
+      "tier": "additional",
+      "nature": "observed",
+      "evaluated": 60,
+      "passed": 34,
+      "rate": 0.5666666666666667
+    },
+    {
+      "id": "add.cited_method",
+      "tier": "additional",
+      "nature": "observed",
+      "evaluated": 55,
+      "passed": 51,
+      "rate": 0.9272727272727272
+    },
+    {
+      "id": "add.converged",
+      "tier": "additional",
+      "nature": "observed",
+      "evaluated": 60,
+      "passed": 60,
+      "rate": 1
+    },
+    {
+      "id": "add.no_refetch",
+      "tier": "additional",
+      "nature": "observed",
+      "evaluated": 60,
+      "passed": 58,
+      "rate": 0.9666666666666667
+    },
+    {
+      "id": "add.aggregated_in_sql",
+      "tier": "additional",
+      "nature": "observed",
+      "evaluated": 55,
+      "passed": 51,
+      "rate": 0.9272727272727272
+    },
+    {
+      "id": "path.catalog_before_query",
+      "tier": "additional",
+      "nature": "invariant",
+      "evaluated": 55,
+      "passed": 51,
+      "rate": 0.9272727272727272
+    },
+    {
+      "id": "path.docs_before_query",
+      "tier": "additional",
+      "nature": "invariant",
+      "evaluated": 55,
+      "passed": 51,
+      "rate": 0.9272727272727272
+    },
+    {
+      "id": "path.attempts",
+      "tier": "additional",
+      "nature": "observed",
+      "evaluated": 55,
+      "passed": 55,
+      "rate": 1
+    },
+    {
+      "id": "add.faithful",
+      "tier": "additional",
+      "nature": "observed",
+      "evaluated": 60,
+      "passed": 48,
+      "rate": 0.8
+    },
+    {
+      "id": "add.full_vector",
+      "tier": "additional",
+      "nature": "observed",
+      "evaluated": 5,
+      "passed": 5,
+      "rate": 1
+    },
+    {
+      "id": "add.dates",
+      "tier": "additional",
+      "nature": "observed",
+      "evaluated": 5,
+      "passed": 2,
+      "rate": 0.4
+    },
+    {
+      "id": "add.exact",
+      "tier": "additional",
+      "nature": "observed",
+      "evaluated": 10,
+      "passed": 1,
+      "rate": 0.1
+    },
+    {
+      "id": "add.variants",
+      "tier": "additional",
+      "nature": "observed",
+      "evaluated": 5,
+      "passed": 5,
+      "rate": 1
+    },
+    {
+      "id": "add.policy_cited",
+      "tier": "additional",
+      "nature": "observed",
+      "evaluated": 5,
+      "passed": 0,
+      "rate": 0
+    },
+    {
+      "id": "req.category",
+      "tier": "required",
+      "nature": "observed",
+      "evaluated": 5,
+      "passed": 5,
+      "rate": 1
+    },
+    {
+      "id": "add.increase",
+      "tier": "additional",
+      "nature": "observed",
+      "evaluated": 5,
+      "passed": 5,
+      "rate": 1
+    },
+    {
+      "id": "add.driver",
+      "tier": "additional",
+      "nature": "observed",
+      "evaluated": 5,
+      "passed": 0,
+      "rate": 0
+    },
+    {
+      "id": "add.top_vendors",
+      "tier": "additional",
+      "nature": "observed",
+      "evaluated": 5,
+      "passed": 0,
+      "rate": 0
+    },
+    {
+      "id": "req.refunds",
+      "tier": "required",
+      "nature": "observed",
+      "evaluated": 5,
+      "passed": 3,
+      "rate": 0.6
+    },
+    {
+      "id": "add.gross",
+      "tier": "additional",
+      "nature": "observed",
+      "evaluated": 5,
+      "passed": 3,
+      "rate": 0.6
+    },
+    {
+      "id": "add.refund_total",
+      "tier": "additional",
+      "nature": "observed",
+      "evaluated": 5,
+      "passed": 2,
+      "rate": 0.4
+    },
+    {
+      "id": "add.count",
+      "tier": "additional",
+      "nature": "observed",
+      "evaluated": 5,
+      "passed": 5,
+      "rate": 1
+    },
+    {
+      "id": "add.separates",
+      "tier": "additional",
+      "nature": "observed",
+      "evaluated": 5,
+      "passed": 5,
+      "rate": 1
+    },
+    {
+      "id": "add.avg_value",
+      "tier": "additional",
+      "nature": "observed",
+      "evaluated": 5,
+      "passed": 5,
+      "rate": 1
+    }
+  ]
+}

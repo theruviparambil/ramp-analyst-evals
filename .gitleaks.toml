@@ -1,0 +1,16 @@
+title = "ramp-analyst-evals gitleaks config"
+
+# Use the full default ruleset for all source; only carve out the generated
+# eval receipts under out/, which are produced from the LOCAL synthetic fixture.
+# They contain analyst result-column names and deterministic fixture UUIDs that a
+# generic-api-key rule misreads as secrets. There are no real credentials here.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Generated eval receipts from the synthetic fixture — no secrets."
+paths = [
+  '''out/transcripts\.md''',
+  '''out/results\.jsonl''',
+  '''out/summary\.json''',
+]
