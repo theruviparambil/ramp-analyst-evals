@@ -24,7 +24,7 @@ Sonnet 4.6 on AWS Bedrock — a genuinely different model family from the agent*
 | **REQUIRED tier** (the SLA) | **88% mean**, range **83–100%** over 5 runs |
 | **ADDITIONAL tier** (headroom) | **47% mean**, range **33–58%** |
 | Cost | agent **$1.19** (OpenAI, 198 calls) + judge **$0.13** (Bedrock, 60 calls) = **$1.32** |
-| Offline tests (CI) | **82 passing**, keyless |
+| Offline tests (CI) | **87 passing**, keyless |
 | Eval gate @ REQUIRED ≥ 0.9 | **fails at 88%** — on purpose (see below) |
 
 Per-question, how often each tier fully passed across the 5 runs:
@@ -84,7 +84,7 @@ Reproduce the whole scoring machinery with no key in ~30 seconds:
 
 ```bash
 npm install
-npm test              # 82 tests, fully offline (scripted model + real DuckDB)
+npm test              # 87 tests, fully offline (scripted model + real DuckDB)
 npm run ground-truth  # print the planted patterns and their exact values
 ```
 
@@ -96,6 +96,53 @@ npm run demo                     # first 6 questions (cheap)
 npm run eval -- --samples=5      # all 12, variance-controlled, + the eval gate
 npm run ask -- "How much did we spend with Delta in Q2?"
 ```
+
+## Two frontier agents, head to head
+
+Point the same 12 questions at a different agent and the harness discriminates.
+Below, GPT-5.1 (judged by Claude) and Claude Sonnet 4.6 (judged by GPT-5.1), each
+graded cross-family — **neither model grades its own family, in either direction.**
+
+| | GPT-5.1 agent · Claude judge | Claude Sonnet 4.6 agent · GPT-5.1 judge |
+|---|---|---|
+| REQUIRED tier | 88% mean (83–100%) — **fails** the 0.9 gate | **100% mean** (100–100%) — **clears** it |
+| ADDITIONAL tier | 47% mean (33–58%) | 42% mean (33–50%) |
+| Agent cost (5×12) | $1.19 (OpenAI) | $4.57 (Bedrock) |
+| Judge cost | $0.13 (Bedrock) | $0.06 (OpenAI) |
+
+Required-tier pass frequency per question, side by side (passes out of 5 samples):
+
+```
+                         GPT-5.1   Claude
+q01_total_net_spend        5/5      5/5
+q02_top_vendor             5/5      5/5
+q03_spend_by_department    5/5      5/5
+q04_duplicate_charge       3/5      5/5   ← the duplicate
+q05_vendor_variant         5/5      5/5
+q06_out_of_policy          1/5      5/5   ← out-of-policy
+q07_mom_spike              5/5      5/5
+q08_top_spender            5/5      5/5
+q09_software_total         5/5      5/5
+q10_refunds                4/5      5/5
+q11_open_bills             5/5      5/5
+q12_active_users           5/5      5/5
+```
+
+The entire gap is the two anomaly-detection questions. On **q04**, GPT-5.1 grouped by
+exact date and missed the three-days-apart Datadog double-charge on 2 of 5 runs;
+Claude caught it every time. On **q06**, GPT-5.1 answered the policy question in the
+abstract and never queried `policy_status` on 4 of 5 runs; Claude queried it, named
+the Nobu charge every time, and cited the $500 cap (`add.policy_cited` 0/5 → 5/5).
+That is the harness earning its keep: same rubric, same fixture, and it separates a
+model that clears a 0.9 SLA bar from one that doesn't.
+
+Two honest caveats. The soft ADDITIONAL tier is roughly a wash (47% vs 42%) — both
+models leave the same prose-polish headroom (naming the driver vendor, formatting
+every figure), and Claude's slightly lower number sits inside its 33–50% range.
+And Claude paid for its thoroughness: ~3.4× the agent cost, from running more tool
+rounds per question (1.25M vs 0.73M prompt tokens). This is a snapshot on one
+fixture, not a league table — but it's reproducible, and the point is that the
+harness produces a real signal to compare on at all.
 
 ## The test that matters: structured grading
 
@@ -201,7 +248,7 @@ isn't an artifact of one judge (and, gating aside, judge choice doesn't move it)
 inter-rater agreement (Cohen's / Fleiss' κ) instead of accuracy — lives in the
 companion repo, [veriva-eval](https://github.com/theruviparambil/veriva-eval).
 
-**Two gates, kept honest.** The 82 offline tests are the CI gate — they run keyless
+**Two gates, kept honest.** The 87 offline tests are the CI gate — they run keyless
 on every push ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)). The *eval*
 gate is the `process.exit` in `npm run eval`; it needs a key because it has to
 generate real trajectories, so it runs on demand, not in CI.
@@ -291,7 +338,7 @@ src/
     fixture-backend.ts    schema-faithful tool surface + docs_required handshake
     live-backend.ts       Ramp MCP seam (documented stub)
   agent/
-    provider.ts           fetch tool-calling; agent (openai/anthropic) + judge
+    provider.ts           fetch tool-calling; agent + judge (openai/anthropic/bedrock),
                           (openai/anthropic/bedrock), usage capture
     scripted.ts           offline test double
     agent.ts / system-prompt.ts   the read-only, self-correcting loop
