@@ -1,20 +1,20 @@
 {
-  "startedAt": "2026-07-10T00:57:47.996Z",
+  "startedAt": "2026-07-10T05:11:03.372Z",
   "model": "openai:gpt-5.1",
-  "judge": "judge:gpt-4.1",
-  "judgeSharesFamily": true,
+  "judge": "bedrock:us.anthropic.claude-sonnet-4-6",
+  "judgeSharesFamily": false,
   "tag": "eval",
   "requiredBar": 0.9,
   "samples": 5,
   "requiredTier": {
-    "mean": 0.85,
-    "min": 0.75,
-    "max": 0.9166666666666666,
+    "mean": 0.8833333333333334,
+    "min": 0.8333333333333334,
+    "max": 1,
     "perSample": [
-      0.75,
+      1,
       0.9166666666666666,
       0.8333333333333334,
-      0.9166666666666666,
+      0.8333333333333334,
       0.8333333333333334
     ]
   },
@@ -23,11 +23,11 @@
     "min": 0.3333333333333333,
     "max": 0.5833333333333334,
     "perSample": [
-      0.4166666666666667,
-      0.3333333333333333,
       0.5833333333333334,
       0.5,
-      0.5
+      0.3333333333333333,
+      0.5,
+      0.4166666666666667
     ]
   },
   "perQuestion": [
@@ -41,7 +41,7 @@
       "id": "q02_top_vendor",
       "samples": 5,
       "requiredPass": 5,
-      "additionalPass": 1
+      "additionalPass": 2
     },
     {
       "id": "q03_spend_by_department",
@@ -52,14 +52,14 @@
     {
       "id": "q04_duplicate_charge",
       "samples": 5,
-      "requiredPass": 2,
+      "requiredPass": 3,
       "additionalPass": 0
     },
     {
       "id": "q05_vendor_variant",
       "samples": 5,
       "requiredPass": 5,
-      "additionalPass": 4
+      "additionalPass": 5
     },
     {
       "id": "q06_out_of_policy",
@@ -88,8 +88,8 @@
     {
       "id": "q10_refunds",
       "samples": 5,
-      "requiredPass": 3,
-      "additionalPass": 2
+      "requiredPass": 4,
+      "additionalPass": 1
     },
     {
       "id": "q11_open_bills",
@@ -101,14 +101,23 @@
       "id": "q12_active_users",
       "samples": 5,
       "requiredPass": 5,
-      "additionalPass": 3
+      "additionalPass": 2
     }
   ],
   "usage": {
-    "calls": 271,
-    "promptTokens": 707855,
-    "completionTokens": 31856,
-    "estCostUsd": 1.20337875
+    "agent": {
+      "promptTokens": 729652,
+      "completionTokens": 28280,
+      "calls": 198,
+      "estCostUsd": 1.1948649999999998
+    },
+    "judge": {
+      "promptTokens": 26430,
+      "completionTokens": 3218,
+      "calls": 60,
+      "estCostUsd": 0.12756
+    },
+    "totalCostUsd": 1.322425
   },
   "criterionPassRates": [
     {
@@ -140,24 +149,24 @@
       "tier": "required",
       "nature": "observed",
       "evaluated": 60,
-      "passed": 51,
-      "rate": 0.85
+      "passed": 54,
+      "rate": 0.9
     },
     {
       "id": "add.money_format",
       "tier": "additional",
       "nature": "observed",
       "evaluated": 60,
-      "passed": 34,
-      "rate": 0.5666666666666667
+      "passed": 37,
+      "rate": 0.6166666666666667
     },
     {
       "id": "add.cited_method",
       "tier": "additional",
       "nature": "observed",
       "evaluated": 55,
-      "passed": 51,
-      "rate": 0.9272727272727272
+      "passed": 49,
+      "rate": 0.8909090909090909
     },
     {
       "id": "add.converged",
@@ -172,8 +181,8 @@
       "tier": "additional",
       "nature": "observed",
       "evaluated": 60,
-      "passed": 58,
-      "rate": 0.9666666666666667
+      "passed": 60,
+      "rate": 1
     },
     {
       "id": "add.aggregated_in_sql",
@@ -212,8 +221,8 @@
       "tier": "additional",
       "nature": "observed",
       "evaluated": 60,
-      "passed": 48,
-      "rate": 0.8
+      "passed": 52,
+      "rate": 0.8666666666666667
     },
     {
       "id": "add.full_vector",
@@ -228,16 +237,16 @@
       "tier": "additional",
       "nature": "observed",
       "evaluated": 5,
-      "passed": 2,
-      "rate": 0.4
+      "passed": 3,
+      "rate": 0.6
     },
     {
       "id": "add.exact",
       "tier": "additional",
       "nature": "observed",
       "evaluated": 10,
-      "passed": 1,
-      "rate": 0.1
+      "passed": 3,
+      "rate": 0.3
     },
     {
       "id": "add.variants",
@@ -292,24 +301,24 @@
       "tier": "required",
       "nature": "observed",
       "evaluated": 5,
-      "passed": 3,
-      "rate": 0.6
+      "passed": 4,
+      "rate": 0.8
     },
     {
       "id": "add.gross",
       "tier": "additional",
       "nature": "observed",
       "evaluated": 5,
-      "passed": 3,
-      "rate": 0.6
+      "passed": 4,
+      "rate": 0.8
     },
     {
       "id": "add.refund_total",
       "tier": "additional",
       "nature": "observed",
       "evaluated": 5,
-      "passed": 2,
-      "rate": 0.4
+      "passed": 1,
+      "rate": 0.2
     },
     {
       "id": "add.count",
