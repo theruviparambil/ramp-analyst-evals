@@ -5,12 +5,14 @@
  *   - openai:    OpenAI-compatible /chat/completions with `tools` (also serves
  *                OpenRouter, and any OpenAI-compatible gateway).
  *   - anthropic: the Anthropic Messages API with `tools` / tool_use blocks.
- *   - bedrock:   AWS Bedrock Converse API, text-in/text-out (JUDGE only — no
- *                tool-calling). Auth is a Bearer token, so it still fits the
- *                no-SDK fetch ethos. This is what lets the judge be a genuinely
- *                cross-FAMILY model (Claude judging GPT).
+ *   - bedrock:   AWS Bedrock Converse API with tool-calling (toolConfig /
+ *                toolUse / toolResult). Auth is a Bearer token, so it still fits
+ *                the no-SDK fetch ethos. It serves BOTH the judge (Claude judging
+ *                GPT) and the agent (Claude driving the tool loop), enabling a
+ *                two-way cross-FAMILY comparison.
  *
- * The agent model is resolved from whichever API key is present, precedence
+ * The agent model is resolved from the environment: AGENT_TRANSPORT=bedrock (with
+ * AWS_BEARER_TOKEN_BEDROCK) selects Claude on Bedrock; otherwise precedence is
  * OPENROUTER > OPENAI > ANTHROPIC, with AGENT_MODEL as an override. Tests never
  * touch the network — they use the scripted client, or a mocked fetch.
  */
@@ -35,6 +37,17 @@ interface Resolved {
 /** Resolve the agent model from the environment, or null if no key is set. */
 export function resolveAgentModel(): Resolved | null {
   const override = env("AGENT_MODEL");
+  if (env("AGENT_TRANSPORT") === "bedrock") {
+    const key = env("AWS_BEARER_TOKEN_BEDROCK");
+    if (!key) return null;
+    return {
+      transport: "bedrock",
+      model: override ?? "us.anthropic.claude-sonnet-4-6",
+      apiKey: key,
+      baseUrl: env("BEDROCK_BASE_URL") ?? "https://bedrock-runtime.us-east-1.amazonaws.com",
+      label: "bedrock",
+    };
+  }
   if (env("OPENROUTER_API_KEY")) {
     return { transport: "openai", model: override ?? "openai/gpt-5.1", apiKey: env("OPENROUTER_API_KEY")!, baseUrl: "https://openrouter.ai/api/v1", label: "openrouter" };
   }
@@ -131,7 +144,7 @@ function buildClient(resolved: Resolved, opts: ProviderOptions): ProviderClient 
       try {
         const { turn, prompt, completion } =
           resolved.transport === "bedrock"
-            ? await chatBedrock(resolved, messages, maxTokens, controller.signal)
+            ? await chatBedrock(resolved, messages, tools, maxTokens, controller.signal)
             : resolved.transport === "anthropic"
               ? await chatAnthropic(resolved, messages, tools, maxTokens, controller.signal)
               : await chatOpenAI(resolved, messages, tools, maxTokens, controller.signal);
@@ -297,51 +310,75 @@ async function chatAnthropic(r: Resolved, messages: Message[], tools: ToolSpec[]
   };
 }
 
-// ─── AWS Bedrock Converse transport (JUDGE only, text-in/text-out) ─────────────
+// ─── AWS Bedrock Converse transport (agent tool-calling + judge text) ──────────
+
+type BedrockTextBlock = { text: string };
+type BedrockToolUseBlock = { toolUse: { toolUseId: string; name: string; input: Record<string, unknown> } };
+type BedrockToolResultBlock = { toolResult: { toolUseId: string; content: BedrockTextBlock[] } };
+type BedrockContentBlock = BedrockTextBlock | BedrockToolUseBlock | BedrockToolResultBlock;
 
 export interface BedrockRequestBody {
-  messages: Array<{ role: "user" | "assistant"; content: Array<{ text: string }> }>;
-  system?: Array<{ text: string }>;
+  messages: Array<{ role: "user" | "assistant"; content: BedrockContentBlock[] }>;
+  system?: BedrockTextBlock[];
   inferenceConfig: { maxTokens: number };
+  toolConfig?: { tools: Array<{ toolSpec: { name: string; description: string; inputSchema: { json: Record<string, unknown> } } }> };
 }
 
 /**
- * Map normalized messages into the Bedrock Converse shape: `content` is an ARRAY
- * of `{text}` blocks, `system` is a TOP-LEVEL array (not a message), and no
- * temperature is sent (reasoning models reject non-default). Exported for tests.
+ * Map normalized messages into the Bedrock Converse shape. `content` is an ARRAY
+ * of blocks (`text`, `toolUse`, `toolResult`); `system` is a TOP-LEVEL array; and
+ * no temperature is sent (reasoning models reject non-default). When `tools` are
+ * given, they become `toolConfig.tools` so Claude can drive the agent loop.
+ * Exported for tests.
  */
-export function toBedrockRequest(messages: Message[], maxTokens: number): BedrockRequestBody {
+export function toBedrockRequest(messages: Message[], maxTokens: number, tools: ToolSpec[] = []): BedrockRequestBody {
   const systemParts: string[] = [];
   const out: BedrockRequestBody["messages"] = [];
   for (const m of messages) {
-    if (m.role === "system") systemParts.push(m.content);
-    else if (m.role === "user") out.push({ role: "user", content: [{ text: m.content }] });
-    else if (m.role === "assistant") {
-      if (m.text) out.push({ role: "assistant", content: [{ text: m.text }] });
+    if (m.role === "system") {
+      systemParts.push(m.content);
+    } else if (m.role === "user") {
+      out.push({ role: "user", content: [{ text: m.content }] });
+    } else if (m.role === "assistant") {
+      const content: BedrockContentBlock[] = [];
+      if (m.text) content.push({ text: m.text });
+      for (const tc of m.toolCalls) content.push({ toolUse: { toolUseId: tc.id, name: tc.name, input: tc.args } });
+      if (content.length) out.push({ role: "assistant", content }); // Converse rejects empty content
     } else {
-      out.push({ role: "user", content: [{ text: m.content }] }); // tool results as user text (judge has none)
+      // Tool result -> a user message with a toolResult block; merge a run of them.
+      const block: BedrockToolResultBlock = { toolResult: { toolUseId: m.toolCallId, content: [{ text: m.content }] } };
+      const last = out[out.length - 1];
+      if (last && last.role === "user" && last.content.every((b) => "toolResult" in b)) last.content.push(block);
+      else out.push({ role: "user", content: [block] });
     }
   }
   const body: BedrockRequestBody = { messages: out, inferenceConfig: { maxTokens } };
   if (systemParts.length) body.system = systemParts.map((t) => ({ text: t }));
+  if (tools.length) {
+    body.toolConfig = { tools: tools.map((t) => ({ toolSpec: { name: t.name, description: t.description, inputSchema: { json: t.parameters } } })) };
+  }
   return body;
 }
 
-async function chatBedrock(r: Resolved, messages: Message[], maxTokens: number, signal: AbortSignal): Promise<TransportResult> {
+async function chatBedrock(r: Resolved, messages: Message[], tools: ToolSpec[], maxTokens: number, signal: AbortSignal): Promise<TransportResult> {
   const url = `${r.baseUrl.replace(/\/$/, "")}/model/${r.model}/converse`;
   const res = await fetch(url, {
     method: "POST",
     signal,
     headers: { "content-type": "application/json", authorization: `Bearer ${r.apiKey}` },
-    body: JSON.stringify(toBedrockRequest(messages, maxTokens)),
+    body: JSON.stringify(toBedrockRequest(messages, maxTokens, tools)),
   });
   if (!res.ok) throw new Error(`bedrock ${res.status}: ${(await res.text()).slice(0, 300)}`);
   const json = (await res.json()) as {
-    output?: { message?: { content?: Array<{ text?: string }> } };
+    output?: { message?: { content?: Array<{ text?: string; toolUse?: { toolUseId: string; name: string; input?: Record<string, unknown> } }> } };
     usage?: { inputTokens?: number; outputTokens?: number };
   };
-  const text = (json.output?.message?.content ?? []).map((b) => b.text ?? "").join("").trim();
-  return { turn: { text, toolCalls: [] }, prompt: json.usage?.inputTokens ?? 0, completion: json.usage?.outputTokens ?? 0 };
+  const blocks = json.output?.message?.content ?? [];
+  const text = blocks.filter((b) => typeof b.text === "string").map((b) => b.text ?? "").join("").trim();
+  const toolCalls: ToolCallRequest[] = blocks
+    .filter((b): b is { toolUse: { toolUseId: string; name: string; input?: Record<string, unknown> } } => !!b.toolUse)
+    .map((b) => ({ id: b.toolUse.toolUseId, name: b.toolUse.name, args: b.toolUse.input ?? {} }));
+  return { turn: { text, toolCalls }, prompt: json.usage?.inputTokens ?? 0, completion: json.usage?.outputTokens ?? 0 };
 }
 
 function safeJson(s: string): Record<string, unknown> {

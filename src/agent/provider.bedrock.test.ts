@@ -4,12 +4,12 @@
  * env resolution, and that an OpenAI agent + Bedrock judge reads as cross-family.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createJudgeClient, judgeSharesFamilyWithAgent, resolveJudgeModel, toBedrockRequest } from "./provider.js";
-import type { Message } from "./types.js";
+import { createJudgeClient, createProviderClient, judgeSharesFamilyWithAgent, resolveAgentModel, resolveJudgeModel, toBedrockRequest, type BedrockRequestBody } from "./provider.js";
+import type { Message, ToolSpec } from "./types.js";
 
 const ENV_KEYS = [
   "JUDGE_TRANSPORT", "JUDGE_MODEL", "JUDGE_BASE_URL", "AWS_BEARER_TOKEN_BEDROCK", "JUDGE_API_KEY",
-  "OPENAI_API_KEY", "OPENROUTER_API_KEY", "ANTHROPIC_API_KEY", "AGENT_MODEL",
+  "OPENAI_API_KEY", "OPENROUTER_API_KEY", "ANTHROPIC_API_KEY", "AGENT_MODEL", "AGENT_TRANSPORT", "BEDROCK_BASE_URL",
 ];
 
 let saved: Record<string, string | undefined>;
@@ -110,5 +110,114 @@ describe("Bedrock judge client — full path (mocked fetch)", () => {
     vi.stubGlobal("fetch", async () => ({ ok: false, status: 403, async json() { return {}; }, async text() { return "forbidden"; } } as unknown as Response));
     const judge = createJudgeClient()!;
     await expect(judge.chat([{ role: "user", content: "Q" }], [])).rejects.toThrow(/bedrock 403/);
+  });
+});
+
+// ─── Agent tool-calling on Bedrock (Claude driving the loop) ───────────────────
+
+const toolResultId = (block: unknown): string | undefined =>
+  block && typeof block === "object" && "toolResult" in block
+    ? (block as { toolResult: { toolUseId: string } }).toolResult.toolUseId
+    : undefined;
+
+describe("toBedrockRequest — tool-calling shape", () => {
+  it("builds toolConfig and maps toolUse (assistant) + toolResult (user) blocks", () => {
+    const tools: ToolSpec[] = [
+      { name: "execute_analyst_query", description: "run sql", parameters: { type: "object", properties: { sql: { type: "string" } }, required: ["sql"] } },
+    ];
+    const messages: Message[] = [
+      { role: "system", content: "sys" },
+      { role: "user", content: "q" },
+      { role: "assistant", text: "let me query", toolCalls: [{ id: "t1", name: "execute_analyst_query", args: { sql: "SELECT 1" } }] },
+      { role: "tool", toolCallId: "t1", name: "execute_analyst_query", content: '{"rows":[]}' },
+    ];
+    const body = toBedrockRequest(messages, 1000, tools);
+
+    expect(body.toolConfig?.tools[0]!.toolSpec).toMatchObject({
+      name: "execute_analyst_query",
+      description: "run sql",
+      inputSchema: { json: tools[0]!.parameters },
+    });
+    const asst = body.messages.find((m) => m.role === "assistant")!;
+    expect(asst.content).toEqual([
+      { text: "let me query" },
+      { toolUse: { toolUseId: "t1", name: "execute_analyst_query", input: { sql: "SELECT 1" } } },
+    ]);
+    const lastUser = body.messages[body.messages.length - 1]!;
+    expect(lastUser.role).toBe("user");
+    expect(lastUser.content[0]).toEqual({ toolResult: { toolUseId: "t1", content: [{ text: '{"rows":[]}' }] } });
+  });
+
+  it("merges a run of tool results into one user message", () => {
+    const messages: Message[] = [
+      { role: "assistant", text: "", toolCalls: [{ id: "a", name: "x", args: {} }, { id: "b", name: "y", args: {} }] },
+      { role: "tool", toolCallId: "a", name: "x", content: "ra" },
+      { role: "tool", toolCallId: "b", name: "y", content: "rb" },
+    ];
+    const body = toBedrockRequest(messages, 100, []);
+    const userMsgs = body.messages.filter((m) => m.role === "user");
+    expect(userMsgs).toHaveLength(1);
+    expect(userMsgs[0]!.content).toHaveLength(2);
+    expect(body.toolConfig).toBeUndefined(); // no tools -> no toolConfig
+  });
+});
+
+describe("resolveAgentModel — Bedrock agent", () => {
+  it("selects Claude on Bedrock under AGENT_TRANSPORT=bedrock", () => {
+    process.env.AGENT_TRANSPORT = "bedrock";
+    process.env.AWS_BEARER_TOKEN_BEDROCK = "tok";
+    expect(resolveAgentModel()).toMatchObject({ transport: "bedrock", model: "us.anthropic.claude-sonnet-4-6", apiKey: "tok" });
+  });
+
+  it("a Claude agent with an OpenAI judge is cross-family", () => {
+    process.env.AGENT_TRANSPORT = "bedrock";
+    process.env.AWS_BEARER_TOKEN_BEDROCK = "tok";
+    process.env.JUDGE_API_KEY = "sk-judge";
+    process.env.JUDGE_MODEL = "gpt-5.1";
+    expect(judgeSharesFamilyWithAgent()).toBe(false);
+  });
+});
+
+describe("Bedrock agent — tool-use round trip (mocked fetch)", () => {
+  it("emits toolConfig, returns a toolUse, then answers after a toolResult", async () => {
+    process.env.AGENT_TRANSPORT = "bedrock";
+    process.env.AWS_BEARER_TOKEN_BEDROCK = "tok";
+    process.env.AGENT_MODEL = "us.anthropic.claude-sonnet-4-6";
+
+    const bodies: BedrockRequestBody[] = [];
+    let n = 0;
+    vi.stubGlobal("fetch", async (_url: string | URL, init?: RequestInit) => {
+      bodies.push(JSON.parse(init!.body as string) as BedrockRequestBody);
+      n += 1;
+      const payload = n === 1
+        ? { output: { message: { content: [{ text: "I'll check the catalog." }, { toolUse: { toolUseId: "tu1", name: "get_analyst_catalog", input: { rationale: "discover" } } }] } }, stopReason: "tool_use", usage: { inputTokens: 100, outputTokens: 20 } }
+        : { output: { message: { content: [{ text: "Top vendor is Google Ads, $42,500.00." }] } }, stopReason: "end_turn", usage: { inputTokens: 150, outputTokens: 10 } };
+      return { ok: true, status: 200, async json() { return payload; }, async text() { return ""; } } as unknown as Response;
+    });
+
+    const agent = createProviderClient({ maxTokens: 1000 });
+    const tools: ToolSpec[] = [{ name: "get_analyst_catalog", description: "catalog", parameters: { type: "object", properties: {}, required: [] } }];
+
+    const turn1 = await agent.chat([{ role: "system", content: "s" }, { role: "user", content: "top vendor?" }], tools);
+    expect(turn1.toolCalls).toEqual([{ id: "tu1", name: "get_analyst_catalog", args: { rationale: "discover" } }]);
+    expect(turn1.text).toBe("I'll check the catalog.");
+    expect(bodies[0]!.toolConfig?.tools[0]!.toolSpec.name).toBe("get_analyst_catalog");
+
+    const turn2 = await agent.chat([
+      { role: "system", content: "s" },
+      { role: "user", content: "top vendor?" },
+      { role: "assistant", text: turn1.text, toolCalls: turn1.toolCalls },
+      { role: "tool", toolCallId: "tu1", name: "get_analyst_catalog", content: '{"analyst_tables":[]}' },
+    ], tools);
+    expect(turn2.toolCalls).toEqual([]);
+    expect(turn2.text).toContain("$42,500.00");
+
+    const lastMsg = bodies[1]!.messages[bodies[1]!.messages.length - 1]!;
+    expect(lastMsg.role).toBe("user");
+    expect(toolResultId(lastMsg.content[0])).toBe("tu1");
+
+    expect(agent.usage.calls).toBe(2);
+    expect(agent.usage.promptTokens).toBe(250);
+    expect(agent.usage.completionTokens).toBe(30);
   });
 });
