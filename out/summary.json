@@ -130,7 +130,7 @@
     {
       "id": "req.grounded",
       "tier": "required",
-      "nature": "invariant",
+      "nature": "observed",
       "evaluated": 60,
       "passed": 56,
       "rate": 0.9333333333333333
@@ -186,7 +186,7 @@
     {
       "id": "path.catalog_before_query",
       "tier": "additional",
-      "nature": "invariant",
+      "nature": "observed",
       "evaluated": 55,
       "passed": 51,
       "rate": 0.9272727272727272
@@ -194,7 +194,7 @@
     {
       "id": "path.docs_before_query",
       "tier": "additional",
-      "nature": "invariant",
+      "nature": "observed",
       "evaluated": 55,
       "passed": 51,
       "rate": 0.9272727272727272
