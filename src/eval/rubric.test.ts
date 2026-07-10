@@ -11,6 +11,7 @@ const question: GoldenQuestion = {
   id: "t",
   question: "Q",
   expected: "E",
+  answerInstructions: "emit json",
   criteria: [
     det("req.always", "required", "always true", () => ({ pass: true, detail: "" })),
     det("req.value", "required", "answer states $1.00", (c) => answerContainsAmount(c, 100)),

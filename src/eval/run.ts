@@ -19,6 +19,7 @@ import { runAgent } from "../agent/agent.js";
 import { createProviderClient, resolveAgentModel } from "../agent/provider.js";
 import { selectBackend } from "../ramp/backend.js";
 import { GOLDEN } from "./golden.js";
+import { agentPrompt } from "./spec.js";
 import { loadDotenv } from "./env.js";
 import { renderCriterionBreakdown, renderTable, renderTranscript } from "./report.js";
 import { passesGate, scoreQuestion, summarize, type QuestionScore } from "./rubric.js";
@@ -69,7 +70,7 @@ async function main(): Promise<void> {
     const surface = selectBackend(); // fresh docs-handshake session per question
     const t0 = Date.now();
     try {
-      const { trajectory, finalAnswer } = await runAgent(q.question, { client: agent, surface });
+      const { trajectory, finalAnswer } = await runAgent(agentPrompt(q), { client: agent, surface });
       const score = await scoreQuestion(q, finalAnswer, trajectory, { judge });
       scores.push(score);
       transcripts.push(renderTranscript(q.question, trajectory, finalAnswer));

@@ -70,3 +70,41 @@ export function converged(ctx: CheckContext): CheckOutcome {
     ? { pass: false, detail: "hit the tool-call budget without finishing" }
     : { pass: true, detail: "converged within budget" };
 }
+
+/**
+ * OBSERVED discriminator: for an aggregate question, the agent aggregated in SQL
+ * instead of pulling a big page of raw transactions to sum client-side. A lazy
+ * agent that scans get_user_transactions row-by-row fails this even if it lands
+ * the right number. `maxRows` is the raw-pull size we consider a scan.
+ */
+export function aggregatedInSql(ctx: CheckContext, maxRows = 25): CheckOutcome {
+  const usedAnalyst = ctx.trajectory.steps.some((s) => s.name === "execute_analyst_query" && s.ok && (s.resultSummary as { status?: string })?.status === "success");
+  const bulkPulls = ctx.trajectory.steps.filter((s) => {
+    if (s.name !== "get_user_transactions" || !s.ok) return false;
+    const txns = (s.resultSummary as { transactions?: unknown[] })?.transactions;
+    return Array.isArray(txns) && txns.length > maxRows;
+  });
+  if (bulkPulls.length > 0) return { pass: false, detail: `pulled ${bulkPulls.length} bulk page(s) of raw transactions to aggregate client-side` };
+  return usedAnalyst ? { pass: true, detail: "aggregated in SQL" } : { pass: false, detail: "did not aggregate via execute_analyst_query" };
+}
+
+/**
+ * OBSERVED discriminator: the agent did not waste calls re-fetching what it
+ * already had — no repeated catalog/doc reads and no identical query run twice.
+ */
+export function noRedundantRefetch(ctx: CheckContext): CheckOutcome {
+  const seen = new Set<string>();
+  const dupes: string[] = [];
+  for (const s of ctx.trajectory.steps) {
+    let key: string | null = null;
+    if (s.name === "get_analyst_catalog" || s.name === "get_analyst_spend_facts_domain_docs") key = s.name;
+    else if (s.name === "get_analyst_table_domain_docs") key = `docs:${String(s.args?.qualified_name)}`;
+    else if (s.name === "execute_analyst_query") key = `sql:${String(s.args?.sql).replace(/\s+/g, " ").trim()}`;
+    if (key === null) continue;
+    if (seen.has(key)) dupes.push(key.slice(0, 40));
+    seen.add(key);
+  }
+  return dupes.length === 0
+    ? { pass: true, detail: "no redundant re-fetches" }
+    : { pass: false, detail: `refetched: ${dupes.join(", ")}` };
+}

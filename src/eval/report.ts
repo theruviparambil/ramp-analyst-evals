@@ -26,8 +26,12 @@ export function renderTable(scores: QuestionScore[], summary: EvalSummary): stri
 
 export function renderCriterionBreakdown(summary: EvalSummary): string {
   const sorted = [...summary.criterionPassRates].sort((a, b) => (a.tier === b.tier ? a.id.localeCompare(b.id) : a.tier === "required" ? -1 : 1));
-  const lines = sorted.map((c) => `  ${c.tier === "required" ? "[REQ]" : "[ADD]"} ${c.id.padEnd(26)} ${String(c.passed).padStart(2)}/${String(c.evaluated).padStart(2)}  ${pct(c.rate)}`);
-  return ["Per-criterion pass rates:", ...lines].join("\n");
+  const lines = sorted.map((c) => {
+    const tag = c.tier === "required" ? "[REQ]" : "[ADD]";
+    const nat = c.nature === "invariant" ? "(inv)" : "(obs)";
+    return `  ${tag} ${nat} ${c.id.padEnd(26)} ${String(c.passed).padStart(2)}/${String(c.evaluated).padStart(2)}  ${pct(c.rate)}`;
+  });
+  return ["Per-criterion pass rates  [inv]=surface-enforced invariant  [obs]=observed agent behavior:", ...lines].join("\n");
 }
 
 export function renderTranscript(question: string, trajectory: Trajectory, finalAnswer: string): string {

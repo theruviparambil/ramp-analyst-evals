@@ -59,6 +59,9 @@ MONEY & REPORTING
   refunds netted into totals, and unusual month-over-month movements.
 
 FINAL ANSWER
-When you have the answer, stop calling tools and reply in plain prose. Lead with
-the direct answer and the key number(s), then the one or two supporting details
-that matter. Briefly note which query or tool produced the figure.`;
+When you have the answer, stop calling tools and reply. Lead with the direct
+answer and the key number(s) in prose, then the one or two supporting details
+that matter, and briefly note which query or tool produced the figure. If the
+question specifies a JSON answer format, end your message with exactly that
+single fenced json block (real values, no placeholders) — it is graded by an
+automated checker, so the keys and numbers must be correct.`;

@@ -17,6 +17,7 @@ import type { Criterion, GoldenQuestion } from "./spec.js";
 export interface CriterionResult {
   id: string;
   tier: "required" | "additional";
+  nature: "invariant" | "observed";
   kind: "deterministic" | "judge";
   /** true/false, or null when a judge criterion was skipped (no judge available). */
   pass: boolean | null;
@@ -90,20 +91,20 @@ async function evaluate(
 ): Promise<CriterionResult> {
   if (c.kind === "deterministic" && c.run) {
     const outcome = c.run(ctx);
-    return { id: c.id, tier: c.tier, kind: c.kind, pass: outcome.pass, detail: outcome.detail };
+    return { id: c.id, tier: c.tier, nature: c.nature, kind: c.kind, pass: outcome.pass, detail: outcome.detail };
   }
   // Judge criterion.
   if (!judge) {
-    return { id: c.id, tier: c.tier, kind: "judge", pass: null, detail: "skipped (no judge available)" };
+    return { id: c.id, tier: c.tier, nature: c.nature, kind: "judge", pass: null, detail: "skipped (no judge available)" };
   }
   const verdict = await judgeBinary(
     { question: question.question, expected: question.expected, answer: finalAnswer, criterion: c.judgeCriterion ?? c.description },
     judge,
   );
   if (verdict.pass === null) {
-    return { id: c.id, tier: c.tier, kind: "judge", pass: null, detail: `judge error: ${verdict.error ?? "unknown"}` };
+    return { id: c.id, tier: c.tier, nature: c.nature, kind: "judge", pass: null, detail: `judge error: ${verdict.error ?? "unknown"}` };
   }
-  return { id: c.id, tier: c.tier, kind: "judge", pass: verdict.pass, detail: verdict.reason };
+  return { id: c.id, tier: c.tier, nature: c.nature, kind: "judge", pass: verdict.pass, detail: verdict.reason };
 }
 
 // ─── Aggregation across the whole set ─────────────────────────────────────────
@@ -115,7 +116,7 @@ export interface EvalSummary {
   requiredTierPassed: number;
   additionalTierPassed: number;
   /** Per-criterion pass rate across questions (evaluated only). */
-  criterionPassRates: Array<{ id: string; tier: string; evaluated: number; passed: number; rate: number }>;
+  criterionPassRates: Array<{ id: string; tier: string; nature: string; evaluated: number; passed: number; rate: number }>;
 }
 
 export function summarize(scores: QuestionScore[]): EvalSummary {
@@ -123,10 +124,10 @@ export function summarize(scores: QuestionScore[]): EvalSummary {
   const requiredTierPassed = scores.filter((s) => s.requiredPass).length;
   const additionalTierPassed = scores.filter((s) => s.additionalPass).length;
 
-  const byCriterion = new Map<string, { tier: string; evaluated: number; passed: number }>();
+  const byCriterion = new Map<string, { tier: string; nature: string; evaluated: number; passed: number }>();
   for (const s of scores) {
     for (const r of s.results) {
-      const rec = byCriterion.get(r.id) ?? { tier: r.tier, evaluated: 0, passed: 0 };
+      const rec = byCriterion.get(r.id) ?? { tier: r.tier, nature: r.nature, evaluated: 0, passed: 0 };
       if (r.pass !== null) {
         rec.evaluated += 1;
         if (r.pass) rec.passed += 1;
@@ -137,6 +138,7 @@ export function summarize(scores: QuestionScore[]): EvalSummary {
   const criterionPassRates = [...byCriterion.entries()].map(([id, rec]) => ({
     id,
     tier: rec.tier,
+    nature: rec.nature,
     evaluated: rec.evaluated,
     passed: rec.passed,
     rate: rec.evaluated ? rec.passed / rec.evaluated : 1,

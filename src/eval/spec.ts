@@ -14,9 +14,22 @@ import type { CheckContext, CheckOutcome } from "./checkers.js";
 
 export type Tier = "required" | "additional";
 
+/**
+ * INVARIANT vs OBSERVED — an honesty distinction.
+ *
+ * Some checks CANNOT fail when the surface is behaving, because the tool surface
+ * enforces them (the docs handshake is refused otherwise; write tools aren't
+ * even exposed). Calling those "the agent did well" is misleading — they're
+ * guarantees of the harness, not evidence about the model. We tag them
+ * "invariant" and report them apart from "observed" behavior, which a lazy or
+ * wrong agent genuinely can fail.
+ */
+export type Nature = "invariant" | "observed";
+
 export interface Criterion {
   id: string;
   tier: Tier;
+  nature: Nature;
   description: string;
   kind: "deterministic" | "judge";
   /** Deterministic evaluation over the answer + trajectory. */
@@ -30,13 +43,20 @@ export interface GoldenQuestion {
   question: string;
   /** Compact expected-answer statement — shown to the judge and printed in reports. */
   expected: string;
+  /** Instructions appended to the question telling the agent what JSON to emit. */
+  answerInstructions: string;
   criteria: Criterion[];
 }
 
-export function det(id: string, tier: Tier, description: string, run: (ctx: CheckContext) => CheckOutcome): Criterion {
-  return { id, tier, description, kind: "deterministic", run };
+/** The prompt actually sent to the agent: the question plus the answer-format contract. */
+export function agentPrompt(q: GoldenQuestion): string {
+  return `${q.question}\n\n${q.answerInstructions}`;
 }
 
-export function judged(id: string, tier: Tier, description: string, judgeCriterion: string): Criterion {
-  return { id, tier, description, kind: "judge", judgeCriterion };
+export function det(id: string, tier: Tier, description: string, run: (ctx: CheckContext) => CheckOutcome, nature: Nature = "observed"): Criterion {
+  return { id, tier, nature, description, kind: "deterministic", run };
+}
+
+export function judged(id: string, tier: Tier, description: string, judgeCriterion: string, nature: Nature = "observed"): Criterion {
+  return { id, tier, nature, description, kind: "judge", judgeCriterion };
 }
