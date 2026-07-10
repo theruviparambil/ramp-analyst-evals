@@ -15,41 +15,42 @@ tool calls onto Ramp's real MCP endpoint.
 ## Results (real run)
 
 12 questions, run **5 times each** so the model-dependent tier reports a mean and
-a range, not a single wobbling number. Agent `gpt-5.1`, judge `gpt-4.1`, one
-OpenAI key, `RAMP_MODE=fixture`.
+a range, not a single wobbling number. Agent `gpt-5.1` (OpenAI); judge **Claude
+Sonnet 4.6 on AWS Bedrock — a genuinely different model family from the agent**;
+`RAMP_MODE=fixture`.
 
 | | |
 |---|---|
-| **REQUIRED tier** (the SLA) | **85% mean**, range **75–92%** over 5 runs |
+| **REQUIRED tier** (the SLA) | **88% mean**, range **83–100%** over 5 runs |
 | **ADDITIONAL tier** (headroom) | **47% mean**, range **33–58%** |
-| Cost | ≈ **$1.20** — 271 API calls, 707,855 prompt + 31,856 completion tokens |
+| Cost | agent **$1.19** (OpenAI, 198 calls) + judge **$0.13** (Bedrock, 60 calls) = **$1.32** |
 | Offline tests (CI) | **82 passing**, keyless |
-| Eval gate @ REQUIRED ≥ 0.9 | **fails at 85%** — on purpose (see below) |
+| Eval gate @ REQUIRED ≥ 0.9 | **fails at 88%** — on purpose (see below) |
 
 Per-question, how often each tier fully passed across the 5 runs:
 
 ```
 q01_total_net_spend      required 5/5   additional 5/5
-q02_top_vendor           required 5/5   additional 1/5
+q02_top_vendor           required 5/5   additional 2/5
 q03_spend_by_department  required 5/5   additional 4/5
-q04_duplicate_charge     required 2/5   additional 0/5   ← the hard one
-q05_vendor_variant       required 5/5   additional 4/5
+q04_duplicate_charge     required 3/5   additional 0/5   ← the hard one
+q05_vendor_variant       required 5/5   additional 5/5
 q06_out_of_policy        required 1/5   additional 0/5   ← the agent often gives up
 q07_mom_spike            required 5/5   additional 0/5
 q08_top_spender          required 5/5   additional 5/5
 q09_software_total       required 5/5   additional 0/5
-q10_refunds              required 3/5   additional 2/5
+q10_refunds              required 4/5   additional 1/5
 q11_open_bills           required 5/5   additional 4/5
-q12_active_users         required 5/5   additional 3/5
+q12_active_users         required 5/5   additional 2/5
 ```
 
 **The eval gate fails, and that's the deliverable.** The harness is set to require
-a 0.9 REQUIRED-tier pass rate; `gpt-5.1` lands at 0.85. It won't wave the agent
+a 0.9 REQUIRED-tier pass rate; `gpt-5.1` lands at 0.88. It won't wave the agent
 through, because the agent has two real misses:
 
-- **q04 (duplicates)** — the model groups by *exact same date* and reports "no
-  duplicates," missing the planted Datadog double-charge three days apart. This is
-  the single most important test in the repo (see below).
+- **q04 (duplicates)** — on several runs the model groups by *exact same date* and
+  reports "no duplicates," missing the planted Datadog double-charge three days
+  apart. This is the single most important test in the repo (see below).
 - **q06 (out-of-policy)** — on 4 of 5 runs the model answers the policy question in
   the abstract and never queries `spend_facts.policy_status`, so it fails to name
   the Nobu charge. `req.grounded` catches the give-up (it dropped to 93%).
@@ -61,10 +62,11 @@ surface-enforced invariants: read-only 60/60 and rationale-on-every-call 60/60.
 [REQ] (inv) req.read_only         60/60  100%   never called a write tool
 [REQ] (inv) req.rationale         60/60  100%   every tool call had a rationale
 [REQ] (obs) req.grounded          56/60   93%   4 give-ups without a query (q06)
-[REQ] (obs) req.value             51/60   85%   the structured value check
+[REQ] (obs) req.value             54/60   90%   the structured value check
+[ADD] (obs) add.faithful          52/60   87%   the cross-family Claude judge, non-gating
 [ADD] (obs) add.aggregated_in_sql 51/55   93%   aggregated in SQL, not a raw scan
 [ADD] (obs) add.variants           5/5   100%   named both Delta spellings
-[ADD] (obs) add.money_format      34/60   57%   terser JSON-first prose skips $ formatting
+[ADD] (obs) add.money_format      37/60   62%   terser JSON-first prose skips $ formatting
 [ADD] (obs) add.policy_cited       0/5     0%   stopped citing the $500 cap in prose
 ```
 
@@ -114,8 +116,8 @@ decorative.
 
 ## One full transcript
 
-`q02_top_vendor`, verbatim from [`out/transcripts.md`](out/transcripts.md). Note
-the handshake: the agent reads the catalog and domain docs *before* it writes SQL,
+`q02_top_vendor`, from [`out/transcripts.md`](out/transcripts.md). Note the
+handshake: the agent reads the catalog and domain docs *before* it writes SQL,
 because the tool surface returns `docs_required` otherwise — the same prerequisite
 Ramp's Core enforces.
 
@@ -123,14 +125,14 @@ Ramp's Core enforces.
 Q: Which vendor did we spend the most with in Q2, and how much?
 
 1. get_analyst_catalog
-   "Identify available analyst tables to compute top vendor spend for Q2."
+   "Understand which analyst.* tables are available before querying Q2 vendor spend."
 2. get_analyst_spend_facts_domain_docs
-   "Understand spend_facts grain, date, and merchant fields."
+   "Review spend_facts docs to know how to aggregate vendor spend for Q2."
 3. get_analyst_table_domain_docs  (analyst.merchant_dim)
-   "Review merchant_dim to use normalized vendor names."
+   "Need merchant_dim docs to group Q2 card spend by normalized vendor name."
 4. execute_analyst_query
-   "Compute the top vendor by net card spend in Q2, grouping by normalized
-    vendor name to combine spelling variants."
+   "Compute Q2 (2026-04-01 to 2026-06-30) net card spend by normalized vendor
+    and pick the top vendor by spend."
    SQL:
      SELECT md.normalized_merchant_name AS vendor, SUM(sf.amount) AS net_spend
      FROM analyst.spend_facts sf
@@ -142,16 +144,17 @@ Q: Which vendor did we spend the most with in Q2, and how much?
    → { "vendor": "Google Ads", "net_spend": 42500.00 }
 
 Answer:
-   We spent the most with Google Ads in Q2, with net card spend of $42,500 …
+   The vendor you spent the most with in Q2 was Google Ads, with net card spend
+   of $42,500.00 between 2026-04-01 and 2026-06-30 …
    ```json
    {"top_vendor": {"name": "Google Ads", "spend_usd": 42500}}
    ```
 ```
 
 That answer clears every REQUIRED criterion (structured value, read-only,
-grounded) and the reasoning-path checks. It misses one ADDITIONAL criterion —
-`$42,500` in prose isn't Ramp-formatted `$42,500.00` — which is why q02's additional
-tier is only 1/5. Headroom, measured.
+grounded) and the reasoning-path checks. The ADDITIONAL tier is where the headroom
+lives: even a clean answer like this doesn't land every advanced criterion on every
+run (q02's additional tier passed 2 of 5).
 
 ## Why an eval, not a demo
 
@@ -189,12 +192,12 @@ the gate by construction. On top of that, the judge itself is swappable: the rep
 ships three judge transports — OpenAI, Anthropic, and **AWS Bedrock**
 (the Converse API over a Bearer token, no SDK) — so the judge can be a genuinely
 different family from the agent in one env var:
-`JUDGE_TRANSPORT=bedrock JUDGE_MODEL=us.anthropic.claude-sonnet-4-6`. The committed
-run's faithfulness verdicts came from `gpt-4.1`; re-scoring the exact same `gpt-5.1`
-answers with **cross-family Claude Sonnet 4.6 on Bedrock** returns *identical*
-verdicts — 12/12 agreement, the same 10/12 faithful, the same two fails (q04, q06).
-So on this set judge family doesn't move the tier, which is reassuring and part of
-why it never gates. The full judge-validation method — proving a grader with
+`JUDGE_TRANSPORT=bedrock JUDGE_MODEL=us.anthropic.claude-sonnet-4-6`. **The committed
+run above is judged by Claude Sonnet 4.6 on Bedrock** grading a GPT-5.1 agent —
+cross-family, not self-grading. As a sanity check, re-scoring the same answers with
+a same-family `gpt-4.1` judge agreed with Claude 12/12 on `add.faithful`, and the
+additional-tier mean came out the same 47% either way — so the soft-tier signal
+isn't an artifact of one judge (and, gating aside, judge choice doesn't move it). The full judge-validation method — proving a grader with
 inter-rater agreement (Cohen's / Fleiss' κ) instead of accuracy — lives in the
 companion repo, [veriva-eval](https://github.com/theruviparambil/veriva-eval).
 
