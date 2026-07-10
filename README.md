@@ -180,9 +180,13 @@ real observed behavior.
 with a range (`--samples=5`). A single number that swings ±8 points between runs
 isn't a measurement.
 
-**A judge you don't over-trust — and can swap for a different family.** Answer
-faithfulness is scored by a *separate* model on the non-gating ADDITIONAL tier
-only. The repo ships three judge transports — OpenAI, Anthropic, and **AWS Bedrock**
+**A judge you don't over-trust — and can swap for a different family.** A model
+grades exactly one criterion, `add.faithful`, on the non-gating ADDITIONAL tier.
+Everything that gates — the entire REQUIRED tier — is deterministic: structured
+value equality against the oracle, plus rule checks (read-only, grounded,
+rationale). No model grades the pass/fail that matters, so judge bias can't reach
+the gate by construction. On top of that, the judge itself is swappable: the repo
+ships three judge transports — OpenAI, Anthropic, and **AWS Bedrock**
 (the Converse API over a Bearer token, no SDK) — so the judge can be a genuinely
 different family from the agent in one env var:
 `JUDGE_TRANSPORT=bedrock JUDGE_MODEL=us.anthropic.claude-sonnet-4-6`. The committed
