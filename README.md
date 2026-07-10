@@ -1,16 +1,24 @@
 # ramp-analyst-evals
 
-An agentic finance analyst built on [Ramp's public agent-tool surface](https://docs.ramp.com/), plus the eval harness that proves — or disproves — that it works.
+An agentic finance analyst built on Ramp's public agent-tool surface, plus the eval harness that proves — or disproves — that it works.
 
 The agent answers spend questions the way an analyst would: it reads the data
 catalog, pulls the domain docs, writes read-only SQL against `analyst.spend_facts`,
 and self-corrects when a query fails. The harness then grades each answer against
-an exact ground truth — the number, the reasoning path, and a structured payload
+an exact ground truth: the number, the reasoning path, and a structured payload
 it can check for equality. The agent is the easy part. The harness is the point.
 
-Everything runs against a local synthetic company by default, so the repo is
-reproducible with no Ramp account and no network. `RAMP_MODE=live` swaps the same
-tool calls onto Ramp's real MCP endpoint.
+The tool schemas mirror Ramp's **public** agent-tool spec
+([`demo-api.ramp.com/v1/public/agent-tools/spec`](https://demo-api.ramp.com/v1/public/agent-tools/spec/),
+also bundled in their open-source [ramp-cli](https://github.com/ramp-public/ramp-cli)); the fixture
+data and analyst tables are entirely synthetic. Everything runs against a local synthetic company by
+default, so the repo is reproducible with no Ramp account and no network. `RAMP_MODE=live` is a
+documented stub (see below) for pointing the same tool calls at Ramp's real MCP endpoint.
+
+> **Disclaimer.** Independent project. Not affiliated with, authorized, or endorsed by Ramp.
+> "Ramp" is a trademark of its owner, used here nominatively to describe the public agent-tool
+> surface this project is built on. No proprietary Ramp data or code is included — the schemas are
+> reproduced from Ramp's public spec, and all data is synthetic.
 
 ## Results (real run)
 
@@ -24,7 +32,7 @@ Sonnet 4.6 on AWS Bedrock — a genuinely different model family from the agent*
 | **REQUIRED tier** (the SLA) | **88% mean**, range **83–100%** over 5 runs |
 | **ADDITIONAL tier** (headroom) | **47% mean**, range **33–58%** |
 | Cost | agent **$1.19** (OpenAI, 198 calls) + judge **$0.13** (Bedrock, 60 calls) = **$1.32** |
-| Offline tests (CI) | **87 passing**, keyless |
+| Offline tests (CI) | **96 passing**, keyless |
 | Eval gate @ REQUIRED ≥ 0.9 | **fails at 88%** — on purpose (see below) |
 
 Per-question, how often each tier fully passed across the 5 runs:
@@ -84,7 +92,7 @@ Reproduce the whole scoring machinery with no key in ~30 seconds:
 
 ```bash
 npm install
-npm test              # 87 tests, fully offline (scripted model + real DuckDB)
+npm test              # 96 tests, fully offline (scripted model + real DuckDB)
 npm run ground-truth  # print the planted patterns and their exact values
 ```
 
@@ -264,7 +272,7 @@ isn't an artifact of one judge (and, gating aside, judge choice doesn't move it)
 inter-rater agreement (Cohen's / Fleiss' κ) instead of accuracy — lives in the
 companion repo, [veriva-eval](https://github.com/theruviparambil/veriva-eval).
 
-**Two gates, kept honest.** The 87 offline tests are the CI gate — they run keyless
+**Two gates, kept honest.** The 96 offline tests are the CI gate — they run keyless
 on every push ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)). The *eval*
 gate is the `process.exit` in `npm run eval`; it needs a key because it has to
 generate real trajectories, so it runs on demand, not in CI.

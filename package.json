@@ -4,6 +4,11 @@
   "description": "An agentic finance analyst on Ramp's public agent-tool surface, plus the eval harness that proves it works. Fixture-first, provider-agnostic, no vendor SDKs.",
   "type": "module",
   "license": "MIT",
+  "author": "Alexander Theruviparambil",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/theruviparambil/ramp-analyst-evals.git"
+  },
   "engines": {
     "node": ">=20"
   },
