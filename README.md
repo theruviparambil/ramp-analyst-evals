@@ -362,7 +362,7 @@ src/
     fixture-backend.ts    schema-faithful tool surface + docs_required handshake
     live-backend.ts       Ramp MCP seam (documented stub)
   agent/
-    provider.ts           fetch tool-calling; agent + judge (openai/anthropic/bedrock),
+    provider.ts           fetch tool-calling; agent + judge
                           (openai/anthropic/bedrock), usage capture
     scripted.ts           offline test double
     agent.ts / system-prompt.ts   the read-only, self-correcting loop
