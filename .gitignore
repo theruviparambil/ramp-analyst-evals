@@ -6,7 +6,7 @@ coverage/
 *.log
 .DS_Store
 
-# out/ is intentionally COMMITTED — it holds the receipts the README quotes
+# out/ is intentionally COMMITTED: it holds the receipts the README quotes
 # (out/summary.json, out/transcripts.md, out/results.jsonl) from a real run.
 # Only the verbose run log is ignored.
 out/live-run.log
