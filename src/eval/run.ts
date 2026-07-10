@@ -146,16 +146,22 @@ async function main(): Promise<void> {
   }
   console.log(renderCriterionBreakdown(mergedSummary) + "\n");
 
-  const promptTokens = agent.usage.promptTokens + (judge?.usage.promptTokens ?? 0);
-  const completionTokens = agent.usage.completionTokens + (judge?.usage.completionTokens ?? 0);
-  const calls = agent.usage.calls + (judge?.usage.calls ?? 0);
-  const priceIn = Number.parseFloat(process.env.AGENT_PRICE_IN ?? "");
-  const priceOut = Number.parseFloat(process.env.AGENT_PRICE_OUT ?? "");
-  const estCostUsd = Number.isFinite(priceIn) && Number.isFinite(priceOut) ? (promptTokens / 1e6) * priceIn + (completionTokens / 1e6) * priceOut : null;
-  console.log(
-    `Usage (all samples): ${calls} API calls, ${promptTokens.toLocaleString()} prompt + ${completionTokens.toLocaleString()} completion tokens` +
-      (estCostUsd !== null ? `  ≈ $${estCostUsd.toFixed(2)} (at $${priceIn}/$${priceOut} per 1M in/out)` : "  (set AGENT_PRICE_IN / AGENT_PRICE_OUT for a $ estimate)"),
-  );
+  // Agent and judge can be different vendors with different prices, so cost is
+  // tracked separately (AGENT_PRICE_* vs JUDGE_PRICE_*, $ per 1M in/out).
+  const cost = (u: { promptTokens: number; completionTokens: number }, inK: string, outK: string): number | null => {
+    const pin = Number.parseFloat(process.env[inK] ?? "");
+    const pout = Number.parseFloat(process.env[outK] ?? "");
+    return Number.isFinite(pin) && Number.isFinite(pout) ? (u.promptTokens / 1e6) * pin + (u.completionTokens / 1e6) * pout : null;
+  };
+  const agentCost = cost(agent.usage, "AGENT_PRICE_IN", "AGENT_PRICE_OUT");
+  const judgeCost = judge ? cost(judge.usage, "JUDGE_PRICE_IN", "JUDGE_PRICE_OUT") : null;
+  const totalCost = agentCost !== null || judgeCost !== null ? (agentCost ?? 0) + (judgeCost ?? 0) : null;
+  const fmtUsd = (c: number | null) => (c !== null ? `$${c.toFixed(2)}` : "n/a");
+
+  console.log(`Usage (all samples):`);
+  console.log(`  agent ${agent.label}: ${agent.usage.calls} calls, ${agent.usage.promptTokens.toLocaleString()} + ${agent.usage.completionTokens.toLocaleString()} tokens  ≈ ${fmtUsd(agentCost)}`);
+  if (judge) console.log(`  judge ${judge.label}: ${judge.usage.calls} calls, ${judge.usage.promptTokens.toLocaleString()} + ${judge.usage.completionTokens.toLocaleString()} tokens  ≈ ${fmtUsd(judgeCost)}`);
+  console.log(`  total ≈ ${fmtUsd(totalCost)}`);
 
   await mkdir(args.outDir, { recursive: true });
   const meta = {
@@ -164,7 +170,11 @@ async function main(): Promise<void> {
     requiredTier: { mean: meanRequired, min: Math.min(...reqRates), max: Math.max(...reqRates), perSample: reqRates },
     additionalTier: { mean: meanAdditional, min: Math.min(...addRates), max: Math.max(...addRates), perSample: addRates },
     perQuestion,
-    usage: { calls, promptTokens, completionTokens, estCostUsd },
+    usage: {
+      agent: { ...agent.usage, estCostUsd: agentCost },
+      judge: judge ? { ...judge.usage, estCostUsd: judgeCost } : null,
+      totalCostUsd: totalCost,
+    },
     criterionPassRates: mergedSummary.criterionPassRates,
   };
   await writeFile(resolve(args.outDir, "results.jsonl"), last.scores.map((s) => JSON.stringify(s)).join("\n") + "\n", "utf8");
