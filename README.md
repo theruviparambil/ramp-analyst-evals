@@ -97,52 +97,61 @@ npm run eval -- --samples=5      # all 12, variance-controlled, + the eval gate
 npm run ask -- "How much did we spend with Delta in Q2?"
 ```
 
-## Two frontier agents, head to head
+## Three agents, head to head
 
-Point the same 12 questions at a different agent and the harness discriminates.
-Below, GPT-5.1 (judged by Claude) and Claude Sonnet 4.6 (judged by GPT-5.1), each
-graded cross-family — **neither model grades its own family, in either direction.**
+Point the same 12 questions at three frontier agents and the harness
+discriminates. Each is graded **cross-family** — no model grades its own family.
+The two OpenAI agents share the *same* Bedrock Claude judge, so they're directly
+comparable; the required tier is deterministic (structured-value equality against
+the oracle), so the agent comparison is judge-independent regardless.
 
-| | GPT-5.1 agent · Claude judge | Claude Sonnet 4.6 agent · GPT-5.1 judge |
-|---|---|---|
-| REQUIRED tier | 88% mean (83–100%) — **fails** the 0.9 gate | **100% mean** (100–100%) — **clears** it |
-| ADDITIONAL tier | 47% mean (33–58%) | 42% mean (33–50%) |
-| Agent cost (5×12) | $1.19 (OpenAI) | $4.57 (Bedrock) |
-| Judge cost | $0.13 (Bedrock) | $0.06 (OpenAI) |
+| | GPT-5.1 · Claude judge | GPT-5.5 · Claude judge | Claude Sonnet 4.6 · GPT-5.1 judge |
+|---|---|---|---|
+| REQUIRED tier | 88% (83–100%) — **fails** 0.9 | **92%** (92–92%) — **clears** | **100%** (100–100%) — **clears** |
+| ADDITIONAL tier | 47% (33–58%) | **60%** (50–75%) | 42% (33–50%) |
+| Agent cost (5×12) | $1.19 | $6.59 | $4.57 |
+| Judge cost | $0.13 | $0.12 | $0.06 |
 
-Required-tier pass frequency per question, side by side (passes out of 5 samples):
+Required-tier pass frequency per question (passes out of 5 samples):
 
 ```
-                         GPT-5.1   Claude
-q01_total_net_spend        5/5      5/5
-q02_top_vendor             5/5      5/5
-q03_spend_by_department    5/5      5/5
-q04_duplicate_charge       3/5      5/5   ← the duplicate
-q05_vendor_variant         5/5      5/5
-q06_out_of_policy          1/5      5/5   ← out-of-policy
-q07_mom_spike              5/5      5/5
-q08_top_spender            5/5      5/5
-q09_software_total         5/5      5/5
-q10_refunds                4/5      5/5
-q11_open_bills             5/5      5/5
-q12_active_users           5/5      5/5
+                         GPT-5.1   GPT-5.5   Claude 4.6
+q01_total_net_spend        5/5       5/5        5/5
+q02_top_vendor             5/5       5/5        5/5
+q03_spend_by_department    5/5       5/5        5/5
+q04_duplicate_charge       3/5       5/5        5/5     ← time-gapped duplicate
+q05_vendor_variant         5/5       5/5        5/5
+q06_out_of_policy          1/5       4/5        5/5     ← policy-query case
+q07_mom_spike              5/5       5/5        5/5
+q08_top_spender            5/5       5/5        5/5
+q09_software_total         5/5       5/5        5/5
+q10_refunds                4/5       1/5        5/5     ← gpt-5.5 regressed here
+q11_open_bills             5/5       5/5        5/5
+q12_active_users           5/5       5/5        5/5
 ```
 
-The entire gap is the two anomaly-detection questions. On **q04**, GPT-5.1 grouped by
-exact date and missed the three-days-apart Datadog double-charge on 2 of 5 runs;
-Claude caught it every time. On **q06**, GPT-5.1 answered the policy question in the
-abstract and never queried `policy_status` on 4 of 5 runs; Claude queried it, named
-the Nobu charge every time, and cited the $500 cap (`add.policy_cited` 0/5 → 5/5).
-That is the harness earning its keep: same rubric, same fixture, and it separates a
-model that clears a 0.9 SLA bar from one that doesn't.
+**Was "Claude beats GPT-5.1" a real gap or a recency artifact? Mostly recency.**
+GPT-5.5 — OpenAI's current frontier — clears the same 0.9 gate GPT-5.1 fails, and
+closes almost all of the difference on the two anomaly questions: it catches the
+time-gapped Datadog duplicate every time (q04, 3/5 → 5/5) and the out-of-policy
+Nobu charge on 4 of 5 runs (q06, 1/5 → 4/5, citing the $500 cap). So the honest
+reading is **newer beats older, and the harness tracks that across model
+generations** — not "Claude beats OpenAI." Both current frontier models clear the
+required tier; the older GPT-5.1 doesn't.
 
-Two honest caveats. The soft ADDITIONAL tier is roughly a wash (47% vs 42%) — both
-models leave the same prose-polish headroom (naming the driver vendor, formatting
-every figure), and Claude's slightly lower number sits inside its 33–50% range.
-And Claude paid for its thoroughness: ~3.4× the agent cost, from running more tool
-rounds per question (1.25M vs 0.73M prompt tokens). This is a snapshot on one
-fixture, not a league table — but it's reproducible, and the point is that the
-harness produces a real signal to compare on at all.
+Two things that survive the recency control and are worth stating plainly. First,
+Claude still has the cleanest required tier (100% vs 92%) — it's the only agent
+that never misses q06. Second — and this is the harness catching something a
+recency ladder would hide — **GPT-5.5 regressed on refunds** (q10, 4/5 → 1/5): it
+mishandled the gross-vs-net-with-refunds question the older GPT-5.1 mostly got
+right. Newer is not uniformly better, and per-model quirks show up regardless of
+release date. GPT-5.5 does lead the softer ADDITIONAL tier (60%), mostly on money
+formatting.
+
+This is a snapshot on one fixture, not a league table — but it's reproducible, and
+the point is the harness produces a real, per-question signal to compare on at all.
+(Cost note: the agents price very differently — GPT-5.1 $1.25/$10, Claude $3/$15,
+GPT-5.5 $5/$30 per 1M in/out — so the cost row reflects rate as much as token use.)
 
 ## The test that matters: structured grading
 
@@ -229,6 +238,13 @@ real observed behavior.
 **Variance control.** The model-dependent tier is run N times and reported as a mean
 with a range (`--samples=5`). A single number that swings ±8 points between runs
 isn't a measurement.
+
+**Infra failures aren't capability failures.** A slow reasoning model whose call
+times out, or a transient 5xx, is retried; if it still fails it's flagged an infra
+error and *excluded from the pass-rate*, not scored as a wrong answer. (The
+per-request timeout is configurable — `AGENT_TIMEOUT_MS` — precisely because a fixed
+timeout that marks slow models wrong is a fairness bug. This surfaced comparing
+GPT-5.5: a 90s cap was aborting its reasoning calls and mis-scoring them.)
 
 **A judge you don't over-trust — and can swap for a different family.** A model
 grades exactly one criterion, `add.faithful`, on the non-gating ADDITIONAL tier.
