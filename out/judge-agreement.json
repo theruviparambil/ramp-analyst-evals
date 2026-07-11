@@ -1,0 +1,82 @@
+{
+  "criterion": "add.faithful",
+  "committed_judge": "bedrock:us.anthropic.claude-sonnet-4-6",
+  "second_judge": "gpt-4.1",
+  "note": "Light cross-judge agreement check on the committed answers, not a kappa validation. The committed add.faithful verdicts are Claude's; this re-scores the same answers with gpt-4.1. Full kappa inter-rater validation lives in veriva-eval.",
+  "agree": 12,
+  "compared": 12,
+  "perQuestion": [
+    {
+      "id": "q01_total_net_spend",
+      "claude_pass": true,
+      "gpt41_pass": true,
+      "agree": true
+    },
+    {
+      "id": "q02_top_vendor",
+      "claude_pass": true,
+      "gpt41_pass": true,
+      "agree": true
+    },
+    {
+      "id": "q03_spend_by_department",
+      "claude_pass": true,
+      "gpt41_pass": true,
+      "agree": true
+    },
+    {
+      "id": "q04_duplicate_charge",
+      "claude_pass": false,
+      "gpt41_pass": false,
+      "agree": true
+    },
+    {
+      "id": "q05_vendor_variant",
+      "claude_pass": true,
+      "gpt41_pass": true,
+      "agree": true
+    },
+    {
+      "id": "q06_out_of_policy",
+      "claude_pass": false,
+      "gpt41_pass": false,
+      "agree": true
+    },
+    {
+      "id": "q07_mom_spike",
+      "claude_pass": true,
+      "gpt41_pass": true,
+      "agree": true
+    },
+    {
+      "id": "q08_top_spender",
+      "claude_pass": true,
+      "gpt41_pass": true,
+      "agree": true
+    },
+    {
+      "id": "q09_software_total",
+      "claude_pass": true,
+      "gpt41_pass": true,
+      "agree": true
+    },
+    {
+      "id": "q10_refunds",
+      "claude_pass": true,
+      "gpt41_pass": true,
+      "agree": true
+    },
+    {
+      "id": "q11_open_bills",
+      "claude_pass": true,
+      "gpt41_pass": true,
+      "agree": true
+    },
+    {
+      "id": "q12_active_users",
+      "claude_pass": true,
+      "gpt41_pass": true,
+      "agree": true
+    }
+  ]
+}

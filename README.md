@@ -265,12 +265,15 @@ ships three judge transports: OpenAI, Anthropic, and **AWS Bedrock**
 different family from the agent in one env var:
 `JUDGE_TRANSPORT=bedrock JUDGE_MODEL=us.anthropic.claude-sonnet-4-6`. **The committed
 run above is judged by Claude Sonnet 4.6 on Bedrock** grading a GPT-5.1 agent,
-cross-family, not self-grading. As a sanity check, re-scoring the same answers with
-a same-family `gpt-4.1` judge agreed with Claude 12/12 on `add.faithful`, and the
-additional-tier mean came out the same 47% either way, so the soft-tier signal
-isn't an artifact of one judge (and, gating aside, judge choice doesn't move it). The full judge-validation method, proving a grader with
-inter-rater agreement (Cohen's / Fleiss' κ) instead of accuracy, lives in the
-companion repo, [veriva-eval](https://github.com/theruviparambil/veriva-eval).
+cross-family, not self-grading. This repo runs a light cross-judge check, not a κ
+validation: re-scoring the committed answers with a second, same-family `gpt-4.1`
+judge agrees with Claude on `add.faithful` **12 of 12** (committed at
+[`out/judge-agreement.json`](out/judge-agreement.json), regenerate with
+`npm run judge-agreement`), and the additional-tier mean is the same 47% either
+way, so the one judged criterion isn't an artifact of a single judge. The full
+inter-rater-agreement validation (Cohen's / Fleiss' κ against human labels) is a
+separate method, **not run in this repo**; it lives in the companion repo,
+[veriva-eval](https://github.com/theruviparambil/veriva-eval).
 
 **Two gates, kept honest.** The 96 offline tests are the CI gate: they run keyless
 on every push ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)). The *eval*

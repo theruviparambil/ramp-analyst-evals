@@ -18,7 +18,8 @@
     "ask": "tsx src/ask.ts",
     "ground-truth": "tsx src/fixture/print-ground-truth.ts",
     "check-types": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "judge-agreement": "tsx scripts/judge-agreement.ts"
   },
   "dependencies": {
     "@duckdb/node-api": "^1.5.4-r.1",
