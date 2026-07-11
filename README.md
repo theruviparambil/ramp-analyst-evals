@@ -233,7 +233,7 @@ every table it referenced, did it aggregate in SQL instead of scanning raw
 transactions, did it avoid redundant re-fetches. The last two are genuine
 discriminators: a lazy agent fails them even with the right number.
 
-**Two binary tiers (Hebbia's framing).** REQUIRED = the SLA (right value, read-only,
+**Two binary tiers.** REQUIRED = the SLA (right value, read-only,
 grounded). ADDITIONAL = headroom (cite the SQL, catch the variant, flag the anomaly,
 format money the Ramp way). Reported separately; only REQUIRED gates. Binary
 pass/fail, never a fuzzy 0.7, because binary converges faster for judges and is what
