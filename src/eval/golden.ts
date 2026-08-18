@@ -8,7 +8,7 @@
  * duplicates, $8,400 is the normal monthly charge" no longer passes q04, because
  * its `duplicates: []` fails set-containment against the planted pair.
  *
- * Tiers (Hebbia framing): REQUIRED = the SLA; ADDITIONAL = headroom. Criteria are
+ * Tiers: REQUIRED = the SLA; ADDITIONAL = headroom. Criteria are
  * also tagged INVARIANT (surface-enforced: cannot fail when the tool surface
  * behaves) vs OBSERVED (real agent behavior a lazy/wrong agent can fail), so the
  * report never dresses a harness guarantee up as model virtue.

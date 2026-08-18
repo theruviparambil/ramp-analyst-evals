@@ -1,7 +1,7 @@
 /**
  * The rubric vocabulary.
  *
- * Two tiers, echoing Hebbia's framing: REQUIRED criteria are the agent's SLAs
+ * Two tiers: REQUIRED criteria are the agent's SLAs
  * (get the number right, stay read-only, ground it in a real tool call). A
  * required-only pass is acceptable. ADDITIONAL criteria are headroom: the
  * advanced behaviors (cite the SQL, catch the vendor variant, flag the anomaly,

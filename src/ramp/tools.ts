@@ -95,10 +95,10 @@ export const TOOLS: ToolDef[] = [
     kind: "read",
     exposed: true,
     description:
-      "Run read-only DuckDB SQL against analyst.* tables. Prerequisite: in this session you must have called get_analyst_catalog and read domain docs for EVERY analyst.<table> the SQL references; otherwise this returns a docs_required response listing what to read (not an error). Qualify tables as analyst.<table>, qualify every column with its table/alias, put non-aggregated SELECT columns in GROUP BY, and use DATE 'YYYY-MM-DD' literals.",
+      "Run read-only DuckDB SQL against analyst.* tables. Only a single SELECT (or WITH ... SELECT) is accepted; anything else is rejected before execution. Prerequisite: in this session you must have called get_analyst_catalog and read domain docs for EVERY analyst.<table> the SQL references; otherwise this returns a docs_required response listing what to read (not an error). Qualify tables as analyst.<table>, qualify every column with its table/alias, put non-aggregated SELECT columns in GROUP BY, and use DATE 'YYYY-MM-DD' literals.",
     parameters: obj(
       {
-        sql: { type: "string", description: "Read-only DuckDB SQL over analyst.* tables." },
+        sql: { type: "string", description: "A single read-only SELECT over analyst.* tables. Mutating statements and file-reading functions are rejected." },
         rationale: rationaleJson,
       },
       ["sql", "rationale"],

@@ -14,11 +14,19 @@
  *   analyst.merchant_dim:     merchants + normalized_merchant_name (variant key)
  *   analyst.ap_bill_facts:    accounts-payable bills (money as DECIMAL $)
  *
- * Everything is READ-ONLY: the connection only ever runs SELECTs the tool layer
- * has validated, and there is no write path exposed to the agent.
+ * Everything the agent runs is READ-ONLY, enforced in `query()` by
+ * `assertReadOnlyQuery` (see read-only-sql.ts): a single statement, beginning
+ * with SELECT or WITH, with no mutating keywords and no filesystem-reading table
+ * functions. The model writes this SQL, so the model is the threat model.
+ *
+ * This matters for correctness as much as safety. The DuckDB instance is a
+ * process-wide singleton shared across a whole eval run, so one mutating query
+ * would corrupt the fixture for every later question while the oracle kept
+ * grading against pristine data.
  */
 
 import { DuckDBInstance, type DuckDBConnection } from "@duckdb/node-api";
+import { assertReadOnlyQuery } from "./read-only-sql.js";
 import { BILLS, DEPARTMENTS, MERCHANTS, TRANSACTIONS, USERS } from "../fixture/data.js";
 
 export interface QueryColumn {
@@ -136,11 +144,14 @@ export class AnalystArtifact {
   }
 
   /**
-   * Execute read-only SQL and return normalized rows. Throws on any SQL error
-   * (bad column, syntax, aggregation), the caller surfaces the message to the
-   * agent so it can repair and retry.
+   * Execute read-only SQL and return normalized rows.
+   *
+   * Rejects anything that is not a single SELECT before touching the connection.
+   * Throws on any SQL error (bad column, syntax, aggregation) too; the caller
+   * surfaces the message to the agent so it can repair and retry.
    */
   async query(sql: string): Promise<QueryResult> {
+    assertReadOnlyQuery(sql);
     await this.init();
     const reader = await this.conn!.runAndReadAll(sql);
     const rawColumns = reader.columnNames();
