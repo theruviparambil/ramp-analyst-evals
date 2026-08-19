@@ -32,7 +32,7 @@ Sonnet 4.6 on AWS Bedrock, a genuinely different model family from the agent**;
 | **REQUIRED tier** (the SLA) | **88% mean**, range **83–100%** over 5 runs |
 | **ADDITIONAL tier** (headroom) | **47% mean**, range **33–58%** |
 | Cost | agent **$1.19** (OpenAI, 198 calls) + judge **$0.13** (Bedrock, 60 calls) = **$1.32** |
-| Offline tests (CI) | **96 passing**, keyless |
+| Offline tests (CI) | **142 passing**, keyless |
 | Eval gate @ REQUIRED ≥ 0.9 | **fails at 88%**, on purpose (see below) |
 
 Per-question, how often each tier fully passed across the 5 runs:
@@ -66,6 +66,20 @@ through, because the agent has two real misses:
 A green 100% would be the suspicious result. What held perfectly are the two
 surface-enforced invariants: read-only 60/60 and rationale-on-every-call 60/60.
 
+> **Caveat on that read-only 60/60.** Those receipts were generated in July,
+> before `execute_analyst_query` actually enforced anything. The tool registry
+> exposed no write tool, so no *tool* could mutate state, and that much was
+> true. But model-authored SQL went straight to DuckDB, so a `DELETE` inside a
+> query would have run. Enforcement landed later, in two layers: a single-pass
+> SQL guard, and `enable_external_access = false` plus `lock_configuration =
+> true` on the connection once the fixture is loaded. `read-only-execution.test.ts`
+> now runs each attack through the real database and asserts the row count is
+> unchanged, because the guard's own unit tests all checked the guard in
+> isolation and passed while it let `SELECT '--' AS x; DELETE FROM
+> analyst.spend_facts` through. No committed transcript shows an agent
+> attempting anything of the sort, but 12 of 60 trajectories are committed, so
+> the July runs cannot rule it out.
+
 ```
 [REQ] (inv) req.read_only         60/60  100%   never called a write tool
 [REQ] (inv) req.rationale         60/60  100%   every tool call had a rationale
@@ -92,7 +106,7 @@ Reproduce the whole scoring machinery with no key in ~30 seconds:
 
 ```bash
 npm install
-npm test              # 96 tests, fully offline (scripted model + real DuckDB)
+npm test              # 142 tests, fully offline (scripted model + real DuckDB)
 npm run ground-truth  # print the planted patterns and their exact values
 ```
 
@@ -275,7 +289,7 @@ inter-rater-agreement validation (Cohen's / Fleiss' κ against human labels) is 
 separate method, **not run in this repo**; it lives in the companion repo,
 [veriva-eval](https://github.com/theruviparambil/veriva-eval).
 
-**Two gates, kept honest.** The 96 offline tests are the CI gate: they run keyless
+**Two gates, kept honest.** The 142 offline tests are the CI gate: they run keyless
 on every push ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)). The *eval*
 gate is the `process.exit` in `npm run eval`; it needs a key because it has to
 generate real trajectories, so it runs on demand, not in CI.

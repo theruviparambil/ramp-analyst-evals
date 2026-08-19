@@ -42,20 +42,100 @@ export class ReadOnlyViolationError extends Error {
 }
 
 /**
- * Blank out comments and quoted text, preserving length-irrelevant structure.
+ * Blank out comments and quoted text in a single left-to-right pass.
  *
  * Single quotes are string literals, double quotes and backticks are identifiers,
  * and `$tag$...$tag$` is DuckDB's dollar-quoting. All four can contain words that
  * would otherwise look like keywords, so none of them are scanned.
+ *
+ * One pass, not a sequence of regex replacements, and that is the whole point.
+ * The earlier version stripped comments first and quotes second, so a comment
+ * marker *inside* a string literal truncated everything after it:
+ *
+ *     SELECT '--' AS x; DELETE FROM analyst.spend_facts
+ *
+ * scrubbed to `SELECT '` and sailed through every check below, and
+ * `runAndReadAll` then executed both statements. Verified against the real
+ * fixture: 207 rows before, 0 after. The same trick worked with a block-comment
+ * opener in a literal and with `--` inside a "quoted identifier".
+ *
+ * Scanning once means whichever construct opens first wins, which is what SQL
+ * itself does. A quote inside a comment is part of the comment; a comment marker
+ * inside a quote is part of the string.
  */
 export function stripCommentsAndQuoted(sql: string): string {
-  let out = sql;
-  out = out.replace(/\/\*[\s\S]*?\*\//g, " ");        // /* block */
-  out = out.replace(/--[^\n]*/g, " ");                 // -- line
-  out = out.replace(/\$([A-Za-z_]*)\$[\s\S]*?\$\1\$/g, " ''  "); // $tag$ ... $tag$
-  out = out.replace(/'(?:[^']|'')*'/g, " '' ");        // 'literal', '' escapes
-  out = out.replace(/"(?:[^"]|"")*"/g, " ident ");     // "identifier"
-  out = out.replace(/`[^`]*`/g, " ident ");            // `identifier`
+  let out = "";
+  let i = 0;
+  const n = sql.length;
+
+  while (i < n) {
+    const c = sql[i]!;
+    const next = sql[i + 1];
+
+    if (c === "-" && next === "-") {
+      i += 2;
+      while (i < n && sql[i] !== "\n") i += 1;
+      out += " ";
+      continue;
+    }
+
+    if (c === "/" && next === "*") {
+      i += 2;
+      while (i < n && !(sql[i] === "*" && sql[i + 1] === "/")) i += 1;
+      i += 2;
+      out += " ";
+      continue;
+    }
+
+    if (c === "$") {
+      const tag = /^\$([A-Za-z_]*)\$/.exec(sql.slice(i))?.[0];
+      if (tag) {
+        const end = sql.indexOf(tag, i + tag.length);
+        i = end === -1 ? n : end + tag.length;
+        out += " '' ";
+        continue;
+      }
+    }
+
+    if (c === "'") {
+      i += 1;
+      while (i < n) {
+        if (sql[i] === "'" && sql[i + 1] === "'") {
+          i += 2;
+          continue;
+        }
+        if (sql[i] === "'") {
+          i += 1;
+          break;
+        }
+        i += 1;
+      }
+      out += " '' ";
+      continue;
+    }
+
+    if (c === '"' || c === "`") {
+      const quote = c;
+      i += 1;
+      while (i < n) {
+        if (sql[i] === quote && sql[i + 1] === quote) {
+          i += 2;
+          continue;
+        }
+        if (sql[i] === quote) {
+          i += 1;
+          break;
+        }
+        i += 1;
+      }
+      out += " ident ";
+      continue;
+    }
+
+    out += c;
+    i += 1;
+  }
+
   return out;
 }
 

@@ -141,6 +141,21 @@ export class AnalystArtifact {
         b.payment_date ? `DATE '${b.payment_date}'` : "NULL",
       ]),
     ).join(",\n")}`);
+
+    // Lock the connection down now that the fixture is loaded. This is the
+    // backstop the SQL guard cannot be: `assertReadOnlyQuery` parses text, and
+    // some file access needs no recognizable function call at all. DuckDB's
+    // replacement scan reads a bare string in FROM position, so
+    //
+    //     SELECT * FROM '/etc/hosts'
+    //
+    // is a plain SELECT with no forbidden keyword in it and no evasion applied.
+    // A text-level deny-list cannot see that; disabling external access can.
+    //
+    // `lock_configuration` then prevents a later query from turning it back on
+    // with SET, which would otherwise reopen everything in one statement.
+    await run("SET enable_external_access = false");
+    await run("SET lock_configuration = true");
   }
 
   /**
