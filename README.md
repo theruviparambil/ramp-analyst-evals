@@ -32,7 +32,7 @@ Sonnet 4.6 on AWS Bedrock, a genuinely different model family from the agent**;
 | **REQUIRED tier** (the SLA) | **88% mean**, range **83–100%** over 5 runs |
 | **ADDITIONAL tier** (headroom) | **47% mean**, range **33–58%** |
 | Cost | agent **$1.19** (OpenAI, 198 calls) + judge **$0.13** (Bedrock, 60 calls) = **$1.32** |
-| Offline tests (CI) | **142 passing**, keyless |
+| Offline tests (CI) | **146 passing**, keyless |
 | Eval gate @ REQUIRED ≥ 0.9 | **fails at 88%**, on purpose (see below) |
 
 Per-question, how often each tier fully passed across the 5 runs:
@@ -106,7 +106,7 @@ Reproduce the whole scoring machinery with no key in ~30 seconds:
 
 ```bash
 npm install
-npm test              # 142 tests, fully offline (scripted model + real DuckDB)
+npm test              # 146 tests, fully offline (scripted model + real DuckDB)
 npm run ground-truth  # print the planted patterns and their exact values
 ```
 
@@ -323,7 +323,7 @@ inter-rater-agreement validation (Cohen's / Fleiss' κ against human labels) is 
 separate method, **not run in this repo**; it lives in the companion repo,
 [veriva-eval](https://github.com/theruviparambil/veriva-eval).
 
-**Two gates, kept honest.** The 142 offline tests are the CI gate: they run keyless
+**Two gates, kept honest.** The 146 offline tests are the CI gate: they run keyless
 on every push ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)). The *eval*
 gate is the `process.exit` in `npm run eval`; it needs a key because it has to
 generate real trajectories, so it runs on demand, not in CI.

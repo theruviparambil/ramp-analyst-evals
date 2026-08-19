@@ -32,6 +32,9 @@ const FORBIDDEN_FUNCTIONS = [
   "read_xlsx", "glob", "parquet_scan", "csv_scan", "sniff_csv", "delta_scan",
   "iceberg_scan", "postgres_scan", "postgres_scan_pushdown", "mysql_scan",
   "sqlite_scan", "shellfs", "parquet_metadata", "parquet_schema",
+  // Indirection: both take SQL or a table name as a string and evaluate it, so
+  // they are a second parser this guard would not be reading.
+  "query", "query_table",
 ] as const;
 
 export class ReadOnlyViolationError extends Error {
@@ -116,6 +119,8 @@ export function stripCommentsAndQuoted(sql: string): string {
 
     if (c === '"' || c === "`") {
       const quote = c;
+      const start = i + 1;
+      let end = start;
       i += 1;
       while (i < n) {
         if (sql[i] === quote && sql[i + 1] === quote) {
@@ -123,12 +128,26 @@ export function stripCommentsAndQuoted(sql: string): string {
           continue;
         }
         if (sql[i] === quote) {
+          end = i;
           i += 1;
           break;
         }
         i += 1;
+        end = i;
       }
-      out += " ident ";
+      // A quoted identifier is normally blanked, so that `SELECT 1 AS "delete"`
+      // is not mistaken for a DELETE. But an identifier immediately followed by
+      // `(` is being used as a *function name*, and blanking it let the function
+      // blocklist be bypassed by quoting:
+      //
+      //     SELECT * FROM "read_csv_auto"('/etc/hosts')
+      //
+      // scrubbed to `SELECT * FROM ident (...)` and passed. Only the connection
+      // lockdown stopped it, which made the two layers one. Emit the name in
+      // that position so the blocklist can see it.
+      const rest = sql.slice(i);
+      const isCall = /^\s*\(/.test(rest);
+      out += isCall ? ` ${sql.slice(start, end)} ` : " ident ";
       continue;
     }
 

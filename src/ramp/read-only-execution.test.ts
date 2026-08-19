@@ -86,6 +86,33 @@ describe("read-only enforcement, end to end", () => {
     expect(Number(JSON.parse(JSON.stringify(result.rows))[0].n)).toBeGreaterThan(0);
   });
 
+  it("rejects a function name hidden inside a quoted identifier", async () => {
+    // The scrubber blanks quoted identifiers so `SELECT 1 AS "delete"` is not
+    // read as a DELETE. That also hid function names from the blocklist, so
+    // quoting the call was enough to defeat it and only the connection lockdown
+    // stopped the read. Two layers are only two layers if each works alone.
+    await expect(db.query(`SELECT * FROM "read_csv_auto"('/etc/hosts')`)).rejects.toThrow();
+    await expect(db.query("SELECT * FROM `read_text`('/etc/hosts')")).rejects.toThrow();
+  });
+
+  it("rejects the indirection functions that evaluate SQL from a string", async () => {
+    await expect(db.query(`SELECT * FROM query('SELECT 1')`)).rejects.toThrow();
+    await expect(db.query(`SELECT * FROM query_table('analyst.spend_facts')`)).rejects.toThrow();
+  });
+
+  it("still allows a quoted identifier that merely looks dangerous", async () => {
+    // Not followed by "(", so it is a column alias and not a call.
+    const result = await db.query(
+      `SELECT COUNT(*) AS "read_csv_auto" FROM analyst.spend_facts`,
+    );
+    expect(Number(JSON.parse(JSON.stringify(result.rows))[0].read_csv_auto)).toBe(ROWS);
+  });
+
+  it("still allows an identifier containing a reserved word", async () => {
+    const result = await db.query(`SELECT 1 AS "delete"`);
+    expect(JSON.parse(JSON.stringify(result.rows))[0].delete).toBe(1);
+  });
+
   it("still allows a literal that merely looks like a comment", async () => {
     const result = await db.query(`SELECT '--not a comment' AS note`);
     expect(JSON.parse(JSON.stringify(result.rows))[0].note).toBe("--not a comment");
