@@ -196,7 +196,8 @@ export const GOLDEN: GoldenQuestion[] = [
   },
   {
     id: "q10_refunds",
-    question: "Were there any refunds this quarter, and what is gross versus net card spend?",
+    question:
+      "Were there any refunds in Q2 2026 (April 1 - June 30), and what is gross versus net card spend?",
     expected: `2 refunds totaling ${fmt(-GT.refundCents)}. Gross ${fmt(GT.grossCents)}, net ${fmt(GT.netCents)}.`,
     answerInstructions: jsonBlock(`{"gross_usd": <number>, "net_usd": <number>, "refunds_usd": <number>, "refund_count": <number>}`),
     criteria: [

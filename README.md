@@ -6,7 +6,7 @@ The agent answers spend questions the way an analyst would: it reads the data
 catalog, pulls the domain docs, writes read-only SQL against `analyst.spend_facts`,
 and self-corrects when a query fails. The harness then grades each answer against
 an exact ground truth: the number, the reasoning path, and a structured payload
-it can check for equality. The agent is the easy part. The harness is the point.
+it can check mechanically. The agent is the easy part. The harness is the point.
 
 The tool schemas mirror Ramp's **public** agent-tool spec
 ([`demo-api.ramp.com/v1/public/agent-tools/spec`](https://demo-api.ramp.com/v1/public/agent-tools/spec/),
@@ -124,7 +124,7 @@ npm run ask -- "How much did we spend with Delta in Q2?"
 Point the same 12 questions at three frontier agents and the harness
 discriminates. Each is graded **cross-family**: no model grades its own family.
 The two OpenAI agents share the *same* Bedrock Claude judge, so they're directly
-comparable; the required tier is deterministic (structured-value equality against
+comparable; the required tier is deterministic (structured-value matching against
 the oracle), so the agent comparison is judge-independent regardless.
 
 | | GPT-5.1 · Claude judge | GPT-5.5 · Claude judge | Claude Sonnet 4.6 · GPT-5.1 judge |
@@ -147,7 +147,7 @@ q06_out_of_policy          1/5       4/5        5/5     ← policy-query case
 q07_mom_spike              5/5       5/5        5/5
 q08_top_spender            5/5       5/5        5/5
 q09_software_total         5/5       5/5        5/5
-q10_refunds                4/5       1/5        5/5     ← gpt-5.5 regressed here
+q10_refunds                4/5       1/5        5/5     ← my question was ambiguous, see below
 q11_open_bills             5/5       5/5        5/5
 q12_active_users           5/5       5/5        5/5
 ```
@@ -161,14 +161,32 @@ reading is **newer beats older, and the harness tracks that across model
 generations**, not "Claude beats OpenAI." Both current frontier models clear the
 required tier; the older GPT-5.1 doesn't.
 
-Two things that survive the recency control and are worth stating plainly. First,
-Claude still has the cleanest required tier (100% vs 92%). It's the only agent
-that never misses q06. Second (and this is the harness catching something a
-recency ladder would hide), **GPT-5.5 regressed on refunds** (q10, 4/5 → 1/5): it
-mishandled the gross-vs-net-with-refunds question the older GPT-5.1 mostly got
-right. Newer is not uniformly better, and per-model quirks show up regardless of
-release date. GPT-5.5 does lead the softer ADDITIONAL tier (60%), mostly on money
-formatting.
+One thing survives the recency control: Claude has the cleanest required tier
+(100% vs 92%) and is the only agent that never misses q06. GPT-5.5 leads the
+softer ADDITIONAL tier (60%), mostly on money formatting.
+
+**Retracted: "GPT-5.5 regressed on refunds."** An earlier version of this README
+read q10 (4/5 → 1/5) as a capability regression. It was not. It was my bug, and
+the committed transcript says so plainly:
+
+> _"I need gross spend, net spend, total refunds, and refund count for the
+> current quarter **(Q3 2026)**"_ ... _"There were no card transactions recorded
+> this quarter... This comes from `analyst.spend_facts` for **Q3 2026**."_
+
+q10 was the only question of the twelve that said **"this quarter"** with no date
+anchor, while every other question named Q2 explicitly. And the catalog the agent
+is required to read first reports `computed_at: 2026-07-01T00:00:00Z` — the first
+day of Q3 2026. So the harness told the agent the data was current as of the
+first day of Q3, then asked about "this quarter", then graded against Q2. GPT-5.5
+resolved the reference against the freshness date it had been given, queried an
+empty range, and reported $0.00 correctly. GPT-5.1 assumed Q2 and was scored
+right for a reason the question did not supply.
+
+The question now reads "in Q2 2026 (April 1 - June 30)" like the other eleven.
+The receipts above predate that fix, so the q10 column measures question
+ambiguity rather than model capability and should be read as noise. Publishing a
+model-capability claim off an ambiguous question is exactly the failure this
+harness exists to catch, and it took an outside reader to catch it here.
 
 This is a snapshot on one fixture, not a league table. But it's reproducible, and
 the point is the harness produces a real, per-question signal to compare on at all.
@@ -186,7 +204,23 @@ confidently-wrong answer would pass a naive "does it say Datadog and $8,400" che
 
 To close that, every question asks the agent to emit a machine-readable JSON block
 next to its prose, and `req.value` grades that block for set / vector / scalar
-**equality** against the independent oracle. The answer above carries
+**structured matching** against the independent oracle.
+
+> **What "matching" actually means, precisely.** Money is compared with
+> `max(2 cents, 0.05% of expected)`, so q01's $188,925.60 admits anything within
+> ±$94.46 and q12's average uses a 1% band (±$145). Names are compared with a
+> *bidirectional substring* after normalization, so `{"name": "a"}` satisfies a
+> check whose expected value is `"Google Ads"`. Item lists are recall-only:
+> `req.value` on q04 asks whether the real duplicate is present, not whether
+> anything false was flagged alongside it, and the dates are graded on the
+> non-gating ADDITIONAL tier. Two outside reviewers built answers that are
+> clearly wrong and clear REQUIRED anyway, including a q04 answer whose prose
+> denies a duplicate exists while its JSON names the legitimate April and June
+> recurring charges. Calling this "equality" was an overstatement and the word
+> has been removed. Tightening the graders would invalidate the committed
+> receipts above, so that is a deliberate next step rather than a silent edit.
+
+The answer above carries
 `{"duplicates": []}`, which fails set-containment against the planted pair, so it
 now fails REQUIRED, as it should. There's a regression test pinning exactly this
 (`src/eval/golden.test.ts`). This is what makes the oracle load-bearing instead of
@@ -271,7 +305,7 @@ GPT-5.5: a 90s cap was aborting its reasoning calls and mis-scoring them.)
 **A judge you don't over-trust, and can swap for a different family.** A model
 grades exactly one criterion, `add.faithful`, on the non-gating ADDITIONAL tier.
 Everything that gates, the entire REQUIRED tier, is deterministic: structured
-value equality against the oracle, plus rule checks (read-only, grounded,
+value matching against the oracle, plus rule checks (read-only, grounded,
 rationale). No model grades the pass/fail that matters, so judge bias can't reach
 the gate by construction. On top of that, the judge itself is swappable: the repo
 ships three judge transports: OpenAI, Anthropic, and **AWS Bedrock**
@@ -385,7 +419,7 @@ src/
     agent.ts / system-prompt.ts   the read-only, self-correcting loop
   eval/
     golden.ts             the 12 questions + tier criteria
-    structured.ts         structured-answer equality vs the oracle
+    structured.ts         structured-answer matching vs the oracle
     checkers.ts           deterministic checkers
     trajectory.ts         reasoning-path + efficiency discriminators
     judge.ts              binary faithfulness judge
