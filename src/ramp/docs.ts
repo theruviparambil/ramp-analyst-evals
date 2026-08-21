@@ -7,7 +7,7 @@
  * guess column names). We reproduce that contract: the docs describe the grain,
  * the money/date columns, the join keys, and, critically, the caveat that
  * `merchant_name` is un-normalized, which is how a docs-reading agent learns to
- * collapse the Delta Air Lines / Delta Airlines variant.
+ * collapse raw merchant spellings onto a canonical name.
  *
  * The response shapes mirror agent-tool.json (catalog: analyst_tables +
  * artifact + freshness; domain docs: columns[] + sections[] + caveats[]).
@@ -26,6 +26,21 @@ export interface CatalogTable {
   column_count: number;
   row_count: number;
   source_tables: string[];
+  /**
+   * Example queries, deliberately NOT the answers to the golden set.
+   *
+   * These used to be the solution SQL verbatim: the net-spend sum, the
+   * normalized-vendor group-by, and `SELECT COUNT(*) AS active_users ... WHERE
+   * is_active`, whose alias is the exact JSON key q12 is graded on. The agent
+   * is REQUIRED to fetch these docs before it can query, so the eval was
+   * partly measuring whether a model can copy a query it was just handed.
+   * Seven of the eight questions with a leaked method sat at a perfect ceiling
+   * for all three agents.
+   *
+   * They are near-misses now: same tables, same joins, same idiom, different
+   * aggregate or grouping. They still teach the schema, which is what a real
+   * catalog does, without answering anything.
+   */
   starter_queries: string[];
 }
 
@@ -82,7 +97,7 @@ const TABLE_DOCS: Record<AnalystTableName, TableDoc> = {
     ],
     sections: [
       { title: "Grain", content: "One row per settled card spend event. Bill/AP spend is NOT here. See analyst.ap_bill_facts. There is no unified spend table; card and AP are separate." },
-      { title: "Money", content: "amount is a signed DECIMAL in dollars. Net spend = SUM(amount). Gross spend = SUM(amount) FILTER (WHERE amount > 0). Refunds are the negative rows." },
+      { title: "Money", content: "amount is a signed DECIMAL in dollars. Refunds and credits are stored as negative rows in the same column, so a naive total nets them out." },
       { title: "Identity caveats", content: "Join to dims for human-readable labels: user_dim for names/role/active status, department_dim for department name, merchant_dim for the canonical (normalized) vendor name. merchant_name on this table is raw and may contain variant spellings." },
     ],
     caveats: [
@@ -92,8 +107,8 @@ const TABLE_DOCS: Record<AnalystTableName, TableDoc> = {
     ],
     source_tables: ["core.card_transactions", "core.spend_events"],
     starter_queries: [
-      "SELECT SUM(spend_facts.amount) AS net_spend FROM analyst.spend_facts",
-      "SELECT spend_facts.merchant_category AS category, SUM(spend_facts.amount) AS total FROM analyst.spend_facts GROUP BY spend_facts.merchant_category ORDER BY total DESC",
+      "SELECT spend_facts.transaction_date, spend_facts.amount FROM analyst.spend_facts ORDER BY spend_facts.transaction_date DESC LIMIT 20",
+      "SELECT spend_facts.spend_program, COUNT(*) AS n FROM analyst.spend_facts GROUP BY spend_facts.spend_program",
     ],
   },
   "analyst.user_dim": {
@@ -112,7 +127,7 @@ const TABLE_DOCS: Record<AnalystTableName, TableDoc> = {
     sections: [{ title: "Grain", content: "One row per employee (active and inactive). Use is_active to distinguish." }],
     caveats: ["Inactive users still appear; exclude them with WHERE user_dim.is_active for headcount / active-user metrics."],
     source_tables: ["core.users"],
-    starter_queries: ["SELECT COUNT(*) AS active_users FROM analyst.user_dim WHERE user_dim.is_active"],
+    starter_queries: ["SELECT user_dim.role, COUNT(*) AS n FROM analyst.user_dim GROUP BY user_dim.role"],
   },
   "analyst.department_dim": {
     columns: [
@@ -124,7 +139,7 @@ const TABLE_DOCS: Record<AnalystTableName, TableDoc> = {
     caveats: [],
     source_tables: ["core.departments"],
     starter_queries: [
-      "SELECT d.department_name, SUM(sf.amount) AS total FROM analyst.spend_facts sf JOIN analyst.department_dim d ON sf.department_uuid = d.department_uuid GROUP BY d.department_name ORDER BY total DESC",
+      "SELECT d.department_name, COUNT(*) AS txn_count FROM analyst.spend_facts sf JOIN analyst.department_dim d ON sf.department_uuid = d.department_uuid GROUP BY d.department_name",
     ],
   },
   "analyst.merchant_dim": {
@@ -135,12 +150,12 @@ const TABLE_DOCS: Record<AnalystTableName, TableDoc> = {
       { column_name: "merchant_category", description: "Merchant category label." },
     ],
     sections: [
-      { title: "Grain", content: "One row per raw merchant record. Several rows can share a normalized_merchant_name when a vendor was captured under different spellings (e.g. 'Delta Air Lines' and 'Delta Airlines')." },
+      { title: "Grain", content: "One row per raw merchant record. Several rows can share a normalized_merchant_name when the same vendor was captured under different spellings." },
     ],
     caveats: ["To combine vendor spelling variants, join spend_facts to merchant_dim on merchant_uuid and group by normalized_merchant_name."],
     source_tables: ["core.merchants"],
     starter_queries: [
-      "SELECT md.normalized_merchant_name AS vendor, SUM(sf.amount) AS total FROM analyst.spend_facts sf JOIN analyst.merchant_dim md ON sf.merchant_uuid = md.merchant_uuid GROUP BY md.normalized_merchant_name ORDER BY total DESC",
+      "SELECT sf.merchant_name, COUNT(*) AS n FROM analyst.spend_facts sf GROUP BY sf.merchant_name ORDER BY n DESC LIMIT 10",
     ],
   },
   "analyst.ap_bill_facts": {
@@ -158,12 +173,12 @@ const TABLE_DOCS: Record<AnalystTableName, TableDoc> = {
     ],
     sections: [
       { title: "Grain", content: "One row per accounts-payable bill. Separate from card spend (analyst.spend_facts). Do not add the two without saying so." },
-      { title: "Money", content: "amount is positive DECIMAL dollars. Outstanding payables = SUM(amount) WHERE payment_status = 'OPEN'." },
+      { title: "Money", content: "amount is positive DECIMAL dollars. payment_status distinguishes settled bills from outstanding ones." },
     ],
     caveats: ["Bills and card transactions are different resources; report them separately unless explicitly combining committed + actual spend."],
     source_tables: ["core.bills"],
     starter_queries: [
-      "SELECT SUM(ap_bill_facts.amount) AS open_payables FROM analyst.ap_bill_facts WHERE ap_bill_facts.payment_status = 'OPEN'",
+      "SELECT ap_bill_facts.payment_status, COUNT(*) AS n FROM analyst.ap_bill_facts GROUP BY ap_bill_facts.payment_status",
     ],
   },
 };

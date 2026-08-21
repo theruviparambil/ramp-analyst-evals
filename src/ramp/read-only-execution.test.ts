@@ -16,7 +16,9 @@ import { AnalystArtifact } from "./analyst-db.js";
  * A guard test that never runs the query cannot catch that. These do.
  */
 
-const ROWS = 207;
+// The whole table, including the rows outside Q2 that make the date filter
+// load-bearing. This suite is about mutation, not about the reporting period.
+const ROWS = 217;
 
 describe("read-only enforcement, end to end", () => {
   let db: AnalystArtifact;

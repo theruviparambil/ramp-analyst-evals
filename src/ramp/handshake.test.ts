@@ -6,7 +6,13 @@ import { describe, expect, it } from "vitest";
 import { createFixtureBackend } from "./backend.js";
 import { referencedTables } from "./analyst-db.js";
 
-const netSql = "SELECT SUM(sf.amount) AS net FROM analyst.spend_facts sf";
+// Scoped to Q2, like every question in the golden set. Without the WHERE clause
+// this returns $274,833.10 rather than the oracle's $188,925.60, because the
+// fixture now carries rows outside the reporting period on purpose. That this
+// test had to change is the point: the filter is load-bearing now.
+const netSql =
+  "SELECT SUM(sf.amount) AS net FROM analyst.spend_facts sf " +
+  "WHERE sf.transaction_date BETWEEN DATE '2026-04-01' AND DATE '2026-06-30'";
 
 describe("referencedTables", () => {
   it("extracts qualified analyst tables from SQL", () => {

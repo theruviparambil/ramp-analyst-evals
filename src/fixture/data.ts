@@ -410,6 +410,28 @@ for (const spec of NOISE) {
 addTxn({ merchant: "Marriott", month: 4, day: 22, amountCents: -41200, user: alex, program: "Travel", memo: "Refund: cancelled hotel night" });
 addTxn({ merchant: "Amazon", month: 5, day: 9, amountCents: -8950, user: userByName("Nina", "Patel"), program: "G&A", memo: "Refund: returned office chair" });
 
+// -- Outside Q2, so the reporting period is load-bearing ----------------------
+//
+// Every row above falls in 2026-04-01 .. 2026-06-27. That made the date filter
+// dead weight: an agent that omitted `WHERE transaction_date BETWEEN ...` got
+// the identical answer on nine of the twelve questions, so a wrong or missing
+// period filter -- the most common real analyst-agent bug -- was invisible.
+//
+// These sit in Q1 and Q3 and are deliberately large enough that including them
+// changes every headline total. They are appended last so no uuid or timestamp
+// above shifts. The oracle filters to Q2 in ground-truth.ts; an agent that does
+// not will now disagree with it.
+addTxn({ merchant: "Google Ads", month: 3, day: 11, amountCents: 2_150_000, user: userByName("Priya", "Nair"), program: "Marketing", memo: "Q1 search campaign, prior quarter" });
+addTxn({ merchant: "Amazon Web Services", month: 3, day: 18, amountCents: 1_480_000, user: userByName("Priya", "Nair"), program: "Engineering", memo: "March cloud spend, prior quarter" });
+addTxn({ merchant: "Datadog", month: 3, day: 22, amountCents: 840_000, user: userByName("Priya", "Nair"), program: "Engineering", memo: "March observability, prior quarter" });
+addTxn({ merchant: "Delta Air Lines", month: 3, day: 26, amountCents: 128_400, user: alex, program: "Travel", memo: "Q1 offsite flight, prior quarter" });
+addTxn({ merchant: "Marriott", month: 3, day: 27, amountCents: 96_500, user: alex, program: "Travel", memo: "Q1 offsite lodging, prior quarter" });
+addTxn({ merchant: "Google Ads", month: 7, day: 6, amountCents: 1_920_000, user: userByName("Priya", "Nair"), program: "Marketing", memo: "Q3 search campaign, next quarter" });
+addTxn({ merchant: "Amazon Web Services", month: 7, day: 9, amountCents: 1_610_000, user: userByName("Priya", "Nair"), program: "Engineering", memo: "July cloud spend, next quarter" });
+addTxn({ merchant: "Notion", month: 7, day: 14, amountCents: 372_000, user: userByName("Nina", "Patel"), program: "G&A", memo: "Q3 seats renewal, next quarter" });
+addTxn({ merchant: "Uber", month: 7, day: 17, amountCents: 18_450, user: userByName("Marcus", "Webb"), program: "Sales", memo: "Q3 client visit, next quarter" });
+addTxn({ merchant: "Amazon", month: 7, day: 21, amountCents: -24_600, user: userByName("Nina", "Patel"), program: "G&A", memo: "Refund: Q3 returned monitor, next quarter" });
+
 export const TRANSACTIONS: TxnRecord[] = TXNS;
 
 // ─── AP bills (numeric dollars on the wire; a few, some open) ────────────────

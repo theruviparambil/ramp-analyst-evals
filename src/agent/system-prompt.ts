@@ -51,12 +51,9 @@ MONEY & REPORTING
 - Report money as formatted dollars, e.g. $1,048.25 (comma thousands, two
   decimals). Transaction amounts arrive as strings; analyst amounts as numbers;
   present both the same way.
-- merchant_name in spend data is NOT normalized. The same vendor can appear
-  under multiple spellings (e.g. "Delta Air Lines" vs "Delta Airlines"). For
-  true per-vendor totals, group by merchant_dim.normalized_merchant_name, and
-  call the variant out explicitly.
-- Call out anomalies you find: duplicate charges, out-of-policy transactions,
-  refunds netted into totals, and unusual month-over-month movements.
+- merchant_name in spend data is NOT normalized. For true per-vendor totals,
+  check merchant_dim before assuming raw names are canonical.
+- Call out anything that looks anomalous, and say why you think so.
 
 FINAL ANSWER
 When you have the answer, stop calling tools and reply. Lead with the direct

@@ -25,15 +25,38 @@ const categoryByMerchant = new Map(MERCHANTS.map((m) => [m.merchant_name, m.merc
 
 const monthOf = (t: TxnRecord): number => Number.parseInt(t.transaction_date.slice(5, 7), 10);
 const sumCents = (xs: TxnRecord[]): number => xs.reduce((a, t) => a + t.amount_cents, 0);
-const positives = TRANSACTIONS.filter((t) => t.amount_cents > 0);
-const negatives = TRANSACTIONS.filter((t) => t.amount_cents < 0);
+
+/**
+ * The reporting period every transaction question asks about.
+ *
+ * This filter used to be absent, and it did not matter because every row in the
+ * fixture fell inside Q2. That made the date filter dead weight: an agent that
+ * omitted `WHERE transaction_date BETWEEN ...` got the identical answer on nine
+ * of the twelve questions, so the single most common real analyst-agent bug --
+ * a wrong or missing period filter -- was invisible to this eval in the
+ * too-wide direction.
+ *
+ * The fixture now carries rows outside Q2, so the filter is load-bearing on
+ * both sides: the oracle applies it here, and an agent that forgets it produces
+ * a number that no longer matches.
+ */
+export const Q2_START = "2026-04-01";
+export const Q2_END = "2026-06-30";
+const inQ2 = (t: TxnRecord): boolean =>
+  t.transaction_date >= Q2_START && t.transaction_date <= Q2_END;
+
+/** Every transaction question is scoped to Q2; use this, not TRANSACTIONS. */
+export const Q2_TRANSACTIONS: TxnRecord[] = TRANSACTIONS.filter(inQ2);
+
+const positives = Q2_TRANSACTIONS.filter((t) => t.amount_cents > 0);
+const negatives = Q2_TRANSACTIONS.filter((t) => t.amount_cents < 0);
 
 // ─── Totals ─────────────────────────────────────────────────────────────────
 
 export const grossCents = sumCents(positives);
 export const refundCents = sumCents(negatives); // negative
-export const netCents = sumCents(TRANSACTIONS);
-export const transactionCount = TRANSACTIONS.length;
+export const netCents = sumCents(Q2_TRANSACTIONS);
+export const transactionCount = Q2_TRANSACTIONS.length;
 
 // ─── Group-bys ──────────────────────────────────────────────────────────────
 
@@ -48,19 +71,19 @@ function rank(map: Map<string, number>): Array<{ key: string; cents: number }> {
 }
 
 /** Spend by department (net), ranked descending. */
-export const departmentSpend = rank(groupSum(TRANSACTIONS, (t) => deptNameByUuid.get(t.department_uuid)!));
+export const departmentSpend = rank(groupSum(Q2_TRANSACTIONS, (t) => deptNameByUuid.get(t.department_uuid)!));
 export const topDepartment = departmentSpend[0]!;
 
 /** Spend by spender (net), ranked descending. */
-export const userSpend = rank(groupSum(TRANSACTIONS, (t) => nameByUserUuid.get(t.user_uuid)!));
+export const userSpend = rank(groupSum(Q2_TRANSACTIONS, (t) => nameByUserUuid.get(t.user_uuid)!));
 export const topSpender = userSpend[0]!;
 
 /** Spend by CANONICAL vendor (net): raw merchant names collapsed via merchant_dim. */
-export const vendorSpend = rank(groupSum(TRANSACTIONS, (t) => normalizedByRawMerchant.get(t.merchant_name) ?? t.merchant_name));
+export const vendorSpend = rank(groupSum(Q2_TRANSACTIONS, (t) => normalizedByRawMerchant.get(t.merchant_name) ?? t.merchant_name));
 export const topVendor = vendorSpend[0]!;
 
 /** Spend by category (net), ranked descending. */
-export const categorySpend = rank(groupSum(TRANSACTIONS, (t) => t.merchant_category));
+export const categorySpend = rank(groupSum(Q2_TRANSACTIONS, (t) => t.merchant_category));
 export function categoryTotalCents(category: string): number {
   return categorySpend.find((c) => c.key === category)?.cents ?? 0;
 }
@@ -112,10 +135,10 @@ export const duplicatePairs: DuplicatePair[] = (() => {
 // ─── (b) Vendor name variant ──────────────────────────────────────────────────
 
 export const deltaVariants: string[] = [
-  ...new Set(TRANSACTIONS.filter((t) => (normalizedByRawMerchant.get(t.merchant_name) ?? "") === "Delta Air Lines").map((t) => t.merchant_name)),
+  ...new Set(Q2_TRANSACTIONS.filter((t) => (normalizedByRawMerchant.get(t.merchant_name) ?? "") === "Delta Air Lines").map((t) => t.merchant_name)),
 ].sort();
 export const deltaCombinedCents = sumCents(
-  TRANSACTIONS.filter((t) => (normalizedByRawMerchant.get(t.merchant_name) ?? "") === "Delta Air Lines"),
+  Q2_TRANSACTIONS.filter((t) => (normalizedByRawMerchant.get(t.merchant_name) ?? "") === "Delta Air Lines"),
 );
 
 // ─── (c) Out-of-policy ─────────────────────────────────────────────────────────
@@ -127,7 +150,7 @@ export interface FlaggedTxn {
   date: string;
 }
 
-export const outOfPolicy: FlaggedTxn[] = TRANSACTIONS.filter((t) => t.policy_status === "out_of_policy").map((t) => ({
+export const outOfPolicy: FlaggedTxn[] = Q2_TRANSACTIONS.filter((t) => t.policy_status === "out_of_policy").map((t) => ({
   merchant_name: t.merchant_name,
   amount_cents: t.amount_cents,
   user_name: nameByUserUuid.get(t.user_uuid)!,
@@ -141,9 +164,9 @@ export interface MonthlyCategory {
   monthly: Record<number, number>; // month -> cents
 }
 
-const categoriesMonthly: MonthlyCategory[] = [...new Set(TRANSACTIONS.map((t) => t.merchant_category))].map((category) => {
+const categoriesMonthly: MonthlyCategory[] = [...new Set(Q2_TRANSACTIONS.map((t) => t.merchant_category))].map((category) => {
   const monthly: Record<number, number> = { 4: 0, 5: 0, 6: 0 };
-  for (const t of TRANSACTIONS.filter((x) => x.merchant_category === category)) monthly[monthOf(t)] += t.amount_cents;
+  for (const t of Q2_TRANSACTIONS.filter((x) => x.merchant_category === category)) monthly[monthOf(t)] += t.amount_cents;
   return { category, monthly };
 });
 
@@ -170,7 +193,7 @@ export const biggestSpike: Spike = (() => {
         // biggest driver merchant in the "to" month for this category
         const driver = rank(
           groupSum(
-            TRANSACTIONS.filter((t) => t.merchant_category === c.category && monthOf(t) === to),
+            Q2_TRANSACTIONS.filter((t) => t.merchant_category === c.category && monthOf(t) === to),
             (t) => t.merchant_name,
           ),
         )[0]!.key;

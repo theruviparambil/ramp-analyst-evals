@@ -156,7 +156,9 @@ export const GOLDEN: GoldenQuestion[] = [
   },
   {
     id: "q07_mom_spike",
-    question: "Which spend category had the biggest month-over-month increase in Q2, and by how much?",
+    question:
+      "Which spend category had the biggest month-over-month increase in Q2, by how much, " +
+      "and which vendor drove it?",
     expected: `${GT.biggestSpike.category}: ${fmt(GT.biggestSpike.fromCents)} (May) to ${fmt(GT.biggestSpike.toCents)} (June), +${fmt(GT.biggestSpike.deltaCents)} (${GT.biggestSpike.ratio.toFixed(1)}x), driven by ${GT.biggestSpike.driverMerchant}.`,
     answerInstructions: jsonBlock(`{"spike": {"category": <string>, "from_usd": <number>, "to_usd": <number>, "increase_usd": <number>, "ratio": <number>}}`),
     criteria: [
@@ -164,6 +166,10 @@ export const GOLDEN: GoldenQuestion[] = [
       det("req.category", "required", `Category = ${GT.biggestSpike.category}`, (c) => structStringIncludes(c, "spike.category", GT.biggestSpike.category), "observed"),
       det("req.value", "required", `June total = ${fmt(GT.biggestSpike.toCents)}`, (c) => structScalarUsd(c, "spike.to_usd", GT.biggestSpike.toCents), "observed"),
       det("add.increase", "additional", `Increase = ${fmt(GT.biggestSpike.deltaCents)}`, (c) => structScalarUsd(c, "spike.increase_usd", GT.biggestSpike.deltaCents), "observed"),
+      // Was 0/15 across three agents because the question never asked for a
+      // driver vendor, and additionalPass is an AND, so one permanently-failing
+      // check zeroed this question's ADDITIONAL tier for everyone. The question
+      // asks now.
       det("add.driver", "additional", "Names the driver vendor in prose", (c) => answerMentionsAny(c, [GT.biggestSpike.driverMerchant]), "observed"),
       ...baseAdditional(true),
       judged("add.faithful", "additional", "Explained the spike", `The answer names ${GT.biggestSpike.category} (May ${fmt(GT.biggestSpike.fromCents)} to June ${fmt(GT.biggestSpike.toCents)}) and characterizes the magnitude (~4x / +${fmt(GT.biggestSpike.deltaCents)}).`),
@@ -183,12 +189,13 @@ export const GOLDEN: GoldenQuestion[] = [
   },
   {
     id: "q09_software_total",
-    question: "How much did we spend on SaaS / software in Q2?",
+    question: "How much did we spend on SaaS / software in Q2, and which vendors led that spend?",
     expected: `SaaS / Software category total = ${fmt(GT.categoryTotalCents("SaaS / Software"))}.`,
     answerInstructions: jsonBlock(`{"software_spend_usd": <number>}`),
     criteria: [
       ...baseRequired("execute_analyst_query"),
       det("req.value", "required", `Software total = ${fmt(GT.categoryTotalCents("SaaS / Software"))}`, (c) => structScalarUsd(c, "software_spend_usd", GT.categoryTotalCents("SaaS / Software")), "observed"),
+      // 0/5, 0/5, 2/5 for the same reason as add.driver on q07: nothing asked.
       det("add.top_vendors", "additional", "Names a leading software vendor in prose", (c) => answerMentionsAny(c, ["Datadog", "GitHub", "Figma"]), "observed"),
       ...baseAdditional(true),
       judged("add.faithful", "additional", "Answer is faithful and correct", `The answer states SaaS/software spend of about ${fmt(GT.categoryTotalCents("SaaS / Software"))} for Q2.`),
