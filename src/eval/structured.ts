@@ -152,6 +152,57 @@ export function structStringIncludes(ctx: CheckContext, path: string, expected: 
     : { pass: false, detail: `${path}="${norm(raw)}" != "${expected}"` };
 }
 
+/** A strict boolean at a dotted path. Accepts "true"/"false" strings, nothing else. */
+export function structBool(ctx: CheckContext, path: string, expected: boolean): CheckOutcome {
+  const s = parseStructured(ctx.finalAnswer);
+  if (!s) return NO_JSON;
+  const raw = getPath(s, path);
+  const got = typeof raw === "boolean" ? raw : raw === "true" ? true : raw === "false" ? false : null;
+  if (got === null) return { pass: false, detail: `"${path}" is not a boolean (${JSON.stringify(raw)})` };
+  return got === expected
+    ? { pass: true, detail: `${path}=${got}` }
+    : { pass: false, detail: `${path}=${got}, expected ${expected}` };
+}
+
+/**
+ * The path is absent, null, or an explicit empty string.
+ *
+ * Used to check that a question the data cannot answer produced NO named
+ * answer. A model that correctly sets answerable:false and then fills in a
+ * department anyway has still fabricated; the null is the part that matters.
+ */
+export function structEmpty(ctx: CheckContext, path: string): CheckOutcome {
+  const s = parseStructured(ctx.finalAnswer);
+  if (!s) return NO_JSON;
+  const v = getPath(s, path);
+  const empty = v === undefined || v === null || (typeof v === "string" && (v.trim() === "" || norm(v) === "null" || norm(v) === "n/a"));
+  return empty ? { pass: true, detail: `${path} is empty` } : { pass: false, detail: `${path}=${JSON.stringify(v)}, expected nothing` };
+}
+
+/**
+ * The string set equals the expected set exactly, by entity name.
+ *
+ * structStringSet is recall-only, which cannot grade a TIE: naming one of two
+ * tied answers would pass, and so would naming all seven programs. Both are
+ * claims the data does not support. An expected set of [] is meaningful and
+ * supported: it asserts the answer really is "none".
+ */
+export function structStringSetExact(ctx: CheckContext, field: string, expected: string[]): CheckOutcome {
+  const s = parseStructured(ctx.finalAnswer);
+  if (!s) return NO_JSON;
+  const arr = getPath(s, field);
+  if (!Array.isArray(arr)) return { pass: false, detail: `missing array "${field}"` };
+  const missing = expected.filter((e) => !arr.some((g) => nameMatches(g, e)));
+  const spurious = arr.filter((g) => !expected.some((e) => nameMatches(g, e)));
+  if (missing.length === 0 && spurious.length === 0) {
+    return { pass: true, detail: expected.length ? `exactly ${expected.join(", ")}` : "correctly empty" };
+  }
+  return {
+    pass: false,
+    detail: `missing [${missing.join(", ")}], unsupported [${spurious.map((x) => String(x)).join(", ")}]`,
+  };
+}
+
 // ─── Top entry {name, value} ──────────────────────────────────────────────────
 
 export function structTopEntry(ctx: CheckContext, obj: string, nameField: string, valueField: string, expectedName: string, expectedCents: number): CheckOutcome {

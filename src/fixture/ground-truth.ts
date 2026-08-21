@@ -216,6 +216,93 @@ export const activeUserCount = USERS.filter((u) => u.is_active).length;
 export const inactiveUserCount = USERS.filter((u) => !u.is_active).length;
 export const avgSpendPerActiveUserCents = Math.round(netCents / activeUserCount);
 
+// ─── Harder questions: judgment, not SQL syntax ───────────────────────────────
+
+/**
+ * What a TYPICAL purchase costs, which is not what the average purchase costs.
+ *
+ * 205 Q2 purchases have a mean of $924.03 and a median of $50.84, an 18x gap:
+ * a handful of five-figure advertising and cloud charges sit on top of a long
+ * tail of meals and rideshare. Reporting the mean as "typical" is defensible
+ * arithmetic and useless advice, which is exactly the judgment this question
+ * is for. Refunds are excluded because a credit is not a purchase.
+ */
+export const typicalPurchase = (() => {
+  const amounts = positives.map((t) => t.amount_cents).sort((a, b) => a - b);
+  const n = amounts.length;
+  // Even-length median is the mean of the two middle values, rounded to a cent.
+  const median = n % 2 === 1 ? amounts[(n - 1) / 2]! : Math.round((amounts[n / 2 - 1]! + amounts[n / 2]!) / 2);
+  return { meanCents: Math.round(sumCents(positives) / n), medianCents: median, count: n } as const;
+})();
+
+/**
+ * Refunds across the WHOLE dataset, versus refunds inside Q2.
+ *
+ * Three refunds exist; one settled 2026-07-21, outside the quarter. An agent
+ * that applies the Q2 filter to everything reports the Q2 figure twice, and one
+ * that applies it nowhere reports the all-time figure twice. Both are wrong in
+ * a way a single-period question cannot see.
+ */
+const allRefunds = TRANSACTIONS.filter((t) => t.amount_cents < 0);
+export const refundsAllTimeCents = sumCents(allRefunds); // negative
+export const refundsAllTimeCount = allRefunds.length;
+export const refundsQ2Count = negatives.length;
+
+/**
+ * How many departments each spend program reaches, in Q2.
+ *
+ * Meals and Travel BOTH reach four departments. The tie is the point: a model
+ * asked for "the program that touches the most departments" will usually name
+ * one and move on. Naming one of two tied answers is not a near miss, it is a
+ * claim the data does not support.
+ */
+export const programDepartmentReach = (() => {
+  const byProgram = new Map<string, Set<string>>();
+  for (const t of Q2_TRANSACTIONS) {
+    const set = byProgram.get(t.spend_program) ?? new Set<string>();
+    set.add(t.department_uuid);
+    byProgram.set(t.spend_program, set);
+  }
+  return [...byProgram]
+    .map(([program, depts]) => ({ program, departments: depts.size }))
+    .sort((a, b) => b.departments - a.departments || a.program.localeCompare(b.program));
+})();
+
+/** Every program tied for the widest reach. More than one by construction. */
+export const widestReachPrograms: string[] = (() => {
+  const top = programDepartmentReach[0]!.departments;
+  return programDepartmentReach.filter((p) => p.departments === top).map((p) => p.program);
+})();
+
+/**
+ * Cash that actually LEFT in Q2: card spend net of refunds, plus bills whose
+ * payment_date falls in Q2.
+ *
+ * The trap is the two OPEN bills. They are real commitments totalling $25,750
+ * and they are not Q2 outflow, because they are unpaid and due in July. Adding
+ * them is the single most natural way to get this wrong, and issue_date instead
+ * of payment_date is the second.
+ */
+const inQ2Date = (d: string | null): boolean => d !== null && d >= Q2_START && d <= Q2_END;
+export const billsPaidInQ2Cents = BILLS.filter((b) => b.payment_status === "PAID" && inQ2Date(b.payment_date)).reduce((a, b) => a + b.amount_cents, 0);
+export const q2CashOutCents = netCents + billsPaidInQ2Cents;
+
+/**
+ * Employees who spent on the card in Q2 and are no longer active.
+ *
+ * Empty, and deliberately so. Two deactivated employees exist, neither spent in
+ * Q2. "The data shows none" and "the data cannot tell me" are different
+ * answers, and a model that cannot separate them is unsafe on exactly the
+ * questions an auditor asks.
+ */
+export const inactiveQ2Spenders: string[] = [
+  ...new Set(
+    Q2_TRANSACTIONS.filter((t) => USERS.find((u) => u.user_uuid === t.user_uuid)?.is_active === false).map(
+      (t) => nameByUserUuid.get(t.user_uuid)!,
+    ),
+  ),
+].sort();
+
 // ─── Bundle for reporting / --ground-truth ─────────────────────────────────────
 
 export const GROUND_TRUTH = {
@@ -238,4 +325,12 @@ export const GROUND_TRUTH = {
   activeUserCount,
   inactiveUserCount,
   avgSpendPerActiveUserCents,
+  typicalPurchase,
+  refundsAllTimeCents,
+  refundsAllTimeCount,
+  programDepartmentReach,
+  widestReachPrograms,
+  billsPaidInQ2Cents,
+  q2CashOutCents,
+  inactiveQ2Spenders,
 } as const;

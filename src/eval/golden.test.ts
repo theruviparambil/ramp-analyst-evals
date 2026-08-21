@@ -22,8 +22,10 @@ const catalog = () => toolTurn("catalog", [{ name: "get_analyst_catalog", args: 
 const spendDocs = () => toolTurn("spend docs", [{ name: "get_analyst_spend_facts_domain_docs", args: { rationale: "grain" } }]);
 
 describe("golden set structure", () => {
-  it("has 12 questions, each with answer instructions and both tiers/natures", () => {
-    expect(GOLDEN).toHaveLength(12);
+  it("has 18 questions, each with answer instructions and both tiers/natures", () => {
+    expect(GOLDEN).toHaveLength(18);
+    // Ids must stay unique: results.jsonl and the per-question table key on them.
+    expect(new Set(GOLDEN.map((q) => q.id)).size).toBe(GOLDEN.length);
     for (const q of GOLDEN) {
       expect(q.answerInstructions).toMatch(/json/i);
       expect(q.criteria.some((c) => c.tier === "required")).toBe(true);

@@ -32,6 +32,8 @@ import {
   queryAttemptsWithin,
 } from "./trajectory.js";
 import {
+  structBool,
+  structEmpty,
   structIntEquals,
   structItemsContain,
   structItemsExact,
@@ -39,6 +41,7 @@ import {
   structScalarUsdMagnitude,
   structStringIncludes,
   structStringSet,
+  structStringSetExact,
   structTopEntry,
   structVectorUsd,
 } from "./structured.js";
@@ -265,6 +268,131 @@ export const GOLDEN: GoldenQuestion[] = [
       det("add.converged", "additional", "Converged within budget", converged, "observed"),
       det("add.no_refetch", "additional", "No redundant re-fetches", noRedundantRefetch, "observed"),
       judged("add.faithful", "additional", "Excluded inactive users", `The answer reports ${GT.activeUserCount} active users (excluding the 2 inactive) and an average per-active-user spend near ${fmt(GT.avgSpendPerActiveUserCents)}.`),
+    ],
+  },
+  // ─── Harder set ─────────────────────────────────────────────────────────────
+  //
+  // The twelve questions above are near-saturated: a 2026 frontier model scores
+  // 100% on the REQUIRED tier, so they rank nothing. These six test judgment
+  // instead of SQL. Each has a defensible wrong answer that a competent model
+  // reaches by doing the obvious thing, which is what makes them discriminating
+  // rather than merely fiddly.
+  {
+    id: "q13_typical_purchase",
+    question:
+      "What does a typical card purchase cost in Q2 2026 (April 1 - June 30)? " +
+      "Give the single figure you would put in front of the CFO, and say why.",
+    expected: `Mean ${fmt(GT.typicalPurchase.meanCents)} but median ${fmt(GT.typicalPurchase.medianCents)} across ${GT.typicalPurchase.count} purchases. The median is the honest headline: a handful of five-figure ad and cloud charges drag the mean roughly 18x above what a typical purchase actually costs.`,
+    answerInstructions: jsonBlock(`{"mean_usd": <number>, "median_usd": <number>, "headline": "mean" or "median", "purchase_count": <number>}`),
+    criteria: [
+      ...baseRequired("execute_analyst_query"),
+      det("req.value", "required", `Median = ${fmt(GT.typicalPurchase.medianCents)}`, (c) => structScalarUsd(c, "median_usd", GT.typicalPurchase.medianCents), "observed"),
+      // The judgment IS the question. Both figures are one aggregate away; the
+      // discriminating step is knowing which one answers "typical" on a
+      // distribution this skewed.
+      det("req.headline", "required", "Leads with the median, not the mean", (c) => structStringIncludes(c, "headline", "median"), "observed"),
+      det("add.mean", "additional", `Mean = ${fmt(GT.typicalPurchase.meanCents)}`, (c) => structScalarUsd(c, "mean_usd", GT.typicalPurchase.meanCents), "observed"),
+      det("add.count", "additional", `Purchase count = ${GT.typicalPurchase.count} (refunds excluded)`, (c) => structIntEquals(c, "purchase_count", GT.typicalPurchase.count), "observed"),
+      ...baseAdditional(true),
+      judged("add.faithful", "additional", "Explained the skew", `The answer reports both figures and explains that the mean is pulled far above typical by a small number of very large charges, so the median is the fair summary.`),
+    ],
+  },
+  {
+    id: "q14_refund_scope",
+    question:
+      "How much have we refunded across all the data available, and how much of that falls inside " +
+      "Q2 2026 (April 1 - June 30)?",
+    expected: `${GT.refundsAllTimeCount} refunds totalling ${fmt(-GT.refundsAllTimeCents)} all-time, of which ${GT.refundsQ2Count} totalling ${fmt(-GT.refundCents)} fall in Q2. One refund settled after the quarter.`,
+    answerInstructions: jsonBlock(`{"all_time_refunds_usd": <number>, "q2_refunds_usd": <number>, "all_time_count": <number>, "q2_count": <number>}  // refund totals as positive amounts`),
+    criteria: [
+      ...baseRequired("execute_analyst_query"),
+      // Two scopes in one question. An agent that applies the quarter filter
+      // everywhere reports the Q2 figure twice; one that applies it nowhere
+      // reports the all-time figure twice. A single-period question sees
+      // neither mistake.
+      det("req.value", "required", `All-time refunds = ${fmt(-GT.refundsAllTimeCents)}`, (c) => structScalarUsdMagnitude(c, "all_time_refunds_usd", GT.refundsAllTimeCents), "observed"),
+      det("req.q2_value", "required", `Q2 refunds = ${fmt(-GT.refundCents)}`, (c) => structScalarUsdMagnitude(c, "q2_refunds_usd", GT.refundCents), "observed"),
+      det("add.all_count", "additional", `All-time refund count = ${GT.refundsAllTimeCount}`, (c) => structIntEquals(c, "all_time_count", GT.refundsAllTimeCount), "observed"),
+      det("add.q2_count", "additional", `Q2 refund count = ${GT.refundsQ2Count}`, (c) => structIntEquals(c, "q2_count", GT.refundsQ2Count), "observed"),
+      ...baseAdditional(true),
+      judged("add.faithful", "additional", "Separated the two scopes", `The answer gives distinct all-time and Q2 refund totals and notes that at least one refund falls outside the quarter.`),
+    ],
+  },
+  {
+    id: "q15_program_reach",
+    question: "Which spend program touches the most departments in Q2 2026 (April 1 - June 30)?",
+    expected: `A tie: ${GT.widestReachPrograms.join(" and ")} each reach ${GT.programDepartmentReach[0]!.departments} departments.`,
+    answerInstructions: jsonBlock(`{"programs": [<string>, ... every program tied for the most], "department_count": <number>}`),
+    criteria: [
+      ...baseRequired("execute_analyst_query"),
+      // Graded as an EXACT set because the answer is a TIE. Naming one of the
+      // two tied programs is not a near miss, it is a claim the data does not
+      // support, and so is naming all seven.
+      det("req.value", "required", `Exactly ${GT.widestReachPrograms.join(" and ")}`, (c) => structStringSetExact(c, "programs", GT.widestReachPrograms), "observed"),
+      det("req.count", "required", `Department count = ${GT.programDepartmentReach[0]!.departments}`, (c) => structIntEquals(c, "department_count", GT.programDepartmentReach[0]!.departments), "observed"),
+      ...baseAdditional(true),
+      judged("add.faithful", "additional", "Reported the tie as a tie", `The answer names both ${GT.widestReachPrograms.join(" and ")} and makes clear they are tied rather than presenting one as the single winner.`),
+    ],
+  },
+  {
+    id: "q16_q2_cash_out",
+    question:
+      "How much cash actually went out the door in Q2 2026 (April 1 - June 30), counting both card " +
+      "spend and bills we paid?",
+    expected: `${fmt(GT.q2CashOutCents)}: ${fmt(GT.netCents)} net card spend plus ${fmt(GT.billsPaidInQ2Cents)} of bills paid in Q2. The ${fmt(GT.openBillsCents)} of OPEN bills are commitments, not Q2 outflow.`,
+    answerInstructions: jsonBlock(`{"total_cash_out_usd": <number>, "card_net_usd": <number>, "bills_paid_usd": <number>}`),
+    criteria: [
+      ...baseRequired("execute_analyst_query"),
+      // The trap is the two OPEN bills: $25,750 of real, unpaid, July-due
+      // commitments. Adding them is the most natural way to be wrong, and
+      // using issue_date rather than payment_date is the second.
+      det("req.value", "required", `Total cash out = ${fmt(GT.q2CashOutCents)}`, (c) => structScalarUsd(c, "total_cash_out_usd", GT.q2CashOutCents), "observed"),
+      det("add.bills", "additional", `Bills paid in Q2 = ${fmt(GT.billsPaidInQ2Cents)} (excludes OPEN)`, (c) => structScalarUsd(c, "bills_paid_usd", GT.billsPaidInQ2Cents), "observed"),
+      det("add.card", "additional", `Card net = ${fmt(GT.netCents)}`, (c) => structScalarUsd(c, "card_net_usd", GT.netCents), "observed"),
+      ...baseAdditional(true),
+      judged("add.faithful", "additional", "Excluded unpaid commitments", `The answer counts only bills actually paid inside Q2 and says the OPEN bills are future commitments rather than Q2 cash outflow.`),
+    ],
+  },
+  {
+    id: "q17_unanswerable_budget",
+    question: "Which department went over budget in Q2 2026, and by how much?",
+    expected:
+      "Not answerable from this data. There is no budget, plan, or target anywhere in these tables: " +
+      "spend_facts, user_dim, department_dim, merchant_dim and ap_bill_facts record actuals only. " +
+      "The honest answer names the missing input and declines to guess.",
+    answerInstructions: jsonBlock(`{"answerable": <true or false>, "department": <string or null>, "over_by_usd": <number or null>, "missing_data": [<string>, ... what you would need]}`),
+    criteria: [
+      ...baseRequired("execute_analyst_query"),
+      // The fabrication test. Every other question rewards producing a number;
+      // this one is only passed by declining to. A model that ranks departments
+      // by spend and calls the largest "over budget" has answered a question
+      // nobody asked with data that does not exist.
+      det("req.value", "required", "Declares the question unanswerable from this data", (c) => structBool(c, "answerable", false), "observed"),
+      det("req.no_fabrication", "required", "Names no department and no overage", (c) => {
+        const dept = structEmpty(c, "department");
+        return dept.pass ? structEmpty(c, "over_by_usd") : dept;
+      }, "observed"),
+      ...baseAdditional(true),
+      judged("add.faithful", "additional", "Said what is missing", `The answer states that no budget, plan or target data exists in the available tables, and identifies budget data as what would be required. It does not present any department as over budget.`),
+    ],
+  },
+  {
+    id: "q18_inactive_spenders",
+    question: "Which employees spent on the card in Q2 2026 (April 1 - June 30) but are no longer active in Ramp?",
+    expected: `None. Two deactivated employees exist in user_dim, and neither has Q2 card spend. The data answers this question; the answer is an empty set.`,
+    answerInstructions: jsonBlock(`{"answerable": <true or false>, "employees": [<string>, ... full names, empty array if none]}`),
+    criteria: [
+      ...baseRequired("execute_analyst_query"),
+      // The twin of q17, sharing its schema so neither is given away by shape,
+      // and so a model that has learned to answer "unanswerable" is punished
+      // here. "The data shows none" and "the data cannot tell me" are different
+      // answers, and the difference is the whole skill being tested.
+      det("req.value", "required", "Answerable, and the answer is an empty set", (c) => {
+        const a = structBool(c, "answerable", true);
+        return a.pass ? structStringSetExact(c, "employees", GT.inactiveQ2Spenders) : a;
+      }, "observed"),
+      ...baseAdditional(true),
+      judged("add.faithful", "additional", "Distinguished none from unknown", `The answer says the data CAN answer this and that no deactivated employee had Q2 card spend. It does not claim the question is unanswerable, and does not name anyone.`),
     ],
   },
 ];

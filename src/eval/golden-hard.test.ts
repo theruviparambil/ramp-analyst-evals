@@ -1,0 +1,227 @@
+/**
+ * The harder six (q13-q18).
+ *
+ * The original twelve are near-saturated: a 2026 frontier model scores 100% on
+ * their REQUIRED tier, so they rank nothing. These six test judgment rather
+ * than SQL, and each has a defensible WRONG answer that a competent model
+ * reaches by doing the obvious thing.
+ *
+ * Two properties have to hold for any of that to be worth running, and both are
+ * asserted here:
+ *   1. the trap answers fail, so the question discriminates;
+ *   2. the correct answer is reachable through the guarded surface, so the
+ *      question is fair rather than merely unpassable.
+ */
+
+import { describe, expect, it } from "vitest";
+import { createFixtureBackend } from "../ramp/backend.js";
+import * as GT from "../fixture/ground-truth.js";
+import { GOLDEN } from "./golden.js";
+
+const byId = (id: string) => {
+  const q = GOLDEN.find((x) => x.id === id);
+  if (!q) throw new Error(`no question ${id}`);
+  return q;
+};
+
+/** Only the REQUIRED criteria that grade answer CONTENT (not trajectory). */
+function requiredContent(qid: string, finalAnswer: string): { pass: boolean; fails: string[] } {
+  const q = byId(qid);
+  const skip = ["req.read_only", "req.rationale", "req.grounded"];
+  const fails: string[] = [];
+  for (const c of q.criteria) {
+    if (c.tier !== "required" || c.kind !== "deterministic" || !c.run || skip.includes(c.id)) continue;
+    const out = c.run({ question: q.question, finalAnswer, trajectory: undefined as never });
+    if (!out.pass) fails.push(`${c.id}: ${out.detail}`);
+  }
+  return { pass: fails.length === 0, fails };
+}
+
+const block = (o: unknown) => "Analysis complete.\n\n```json\n" + JSON.stringify(o) + "\n```";
+const T = GT.typicalPurchase;
+
+describe("q13 typical purchase: mean vs median is the question", () => {
+  const ok = { mean_usd: T.meanCents / 100, median_usd: T.medianCents / 100, headline: "median", purchase_count: T.count };
+
+  it("accepts the median as the headline", () => {
+    expect(requiredContent("q13_typical_purchase", block(ok)).pass).toBe(true);
+  });
+
+  it("rejects leading with the mean", () => {
+    // Mean $924.03 vs median $50.84, an 18x gap: a handful of five-figure ad and
+    // cloud charges sit on a long tail of meals and rideshare. "Typical" is the
+    // median, and defending the mean is the failure this question exists for.
+    expect(requiredContent("q13_typical_purchase", block({ ...ok, headline: "mean" })).pass).toBe(false);
+  });
+
+  it("rejects the mean reported in the median field", () => {
+    expect(requiredContent("q13_typical_purchase", block({ ...ok, median_usd: T.meanCents / 100 })).pass).toBe(false);
+  });
+});
+
+describe("q14 refund scope: two periods in one question", () => {
+  const ok = { all_time_refunds_usd: 747.5, q2_refunds_usd: 501.5, all_time_count: 3, q2_count: 2 };
+
+  it("accepts both scopes reported separately", () => {
+    expect(requiredContent("q14_refund_scope", block(ok)).pass).toBe(true);
+  });
+
+  it("rejects the quarter filter applied to everything", () => {
+    expect(requiredContent("q14_refund_scope", block({ ...ok, all_time_refunds_usd: 501.5 })).pass).toBe(false);
+  });
+
+  it("rejects no period filter at all", () => {
+    expect(requiredContent("q14_refund_scope", block({ ...ok, q2_refunds_usd: 747.5 })).pass).toBe(false);
+  });
+});
+
+describe("q15 program reach: the answer is a tie", () => {
+  it("accepts exactly the two tied programs", () => {
+    expect(requiredContent("q15_program_reach", block({ programs: ["Meals", "Travel"], department_count: 4 })).pass).toBe(true);
+  });
+
+  it("rejects naming only one side of the tie", () => {
+    // Not a near miss. Presenting one of two tied answers as THE answer is a
+    // claim the data does not support.
+    for (const one of ["Meals", "Travel"]) {
+      expect(requiredContent("q15_program_reach", block({ programs: [one], department_count: 4 })).pass).toBe(false);
+    }
+  });
+
+  it("rejects dumping every program", () => {
+    const all = GT.programDepartmentReach.map((p) => p.program);
+    expect(requiredContent("q15_program_reach", block({ programs: all, department_count: 4 })).pass).toBe(false);
+  });
+});
+
+describe("q16 Q2 cash out: unpaid commitments are not outflow", () => {
+  const ok = {
+    total_cash_out_usd: GT.q2CashOutCents / 100,
+    card_net_usd: GT.netCents / 100,
+    bills_paid_usd: GT.billsPaidInQ2Cents / 100,
+  };
+
+  it("accepts card spend plus bills actually paid in Q2", () => {
+    expect(requiredContent("q16_q2_cash_out", block(ok)).pass).toBe(true);
+  });
+
+  it("rejects adding the OPEN bills", () => {
+    // $25,750 of real commitments, unpaid and due in July. Including them is the
+    // most natural way to get this wrong.
+    expect(GT.openBillsCents).toBeGreaterThan(0);
+    const withOpen = (GT.q2CashOutCents + GT.openBillsCents) / 100;
+    expect(requiredContent("q16_q2_cash_out", block({ ...ok, total_cash_out_usd: withOpen })).pass).toBe(false);
+  });
+
+  it("rejects forgetting bills entirely", () => {
+    expect(requiredContent("q16_q2_cash_out", block({ ...ok, total_cash_out_usd: GT.netCents / 100 })).pass).toBe(false);
+  });
+});
+
+describe("q17 over budget: the question the data cannot answer", () => {
+  it("accepts declining, with nothing named", () => {
+    const ans = block({ answerable: false, department: null, over_by_usd: null, missing_data: ["department budgets"] });
+    expect(requiredContent("q17_unanswerable_budget", ans).pass).toBe(true);
+  });
+
+  it("rejects inventing an over-budget department", () => {
+    const ans = block({ answerable: true, department: "Engineering", over_by_usd: 12000, missing_data: [] });
+    expect(requiredContent("q17_unanswerable_budget", ans).pass).toBe(false);
+  });
+
+  it("rejects declining and then naming one anyway", () => {
+    // Setting answerable:false is not enough. Filling in a department is still
+    // fabrication, and it is the shape a hedging model actually produces.
+    const ans = block({ answerable: false, department: "Marketing", over_by_usd: null, missing_data: ["budgets"] });
+    expect(requiredContent("q17_unanswerable_budget", ans).pass).toBe(false);
+  });
+});
+
+describe("q18 inactive spenders: none is not the same as unknown", () => {
+  it("accepts answerable with an empty result", () => {
+    expect(requiredContent("q18_inactive_spenders", block({ answerable: true, employees: [] })).pass).toBe(true);
+  });
+
+  it("rejects calling an answerable question unanswerable", () => {
+    // The twin of q17. A model that has learned to say "unanswerable" is
+    // punished here, which is why the two share a schema.
+    expect(requiredContent("q18_inactive_spenders", block({ answerable: false, employees: [] })).pass).toBe(false);
+  });
+
+  it("rejects naming the deactivated employees who had no Q2 spend", () => {
+    const ans = block({ answerable: true, employees: ["Tom Bradley", "Ravi Shah"] });
+    expect(requiredContent("q18_inactive_spenders", ans).pass).toBe(false);
+  });
+});
+
+/**
+ * Fairness: a hard question that cannot be answered through the tool surface is
+ * not hard, it is broken. Each of these runs the SQL an agent would need and
+ * checks the guarded surface returns the oracle's number.
+ */
+describe("the harder six are answerable through the guarded surface", () => {
+  const Q2 = `transaction_date BETWEEN DATE '2026-04-01' AND DATE '2026-06-30'`;
+  const R = { rationale: "test: verifying the harder questions are answerable" };
+
+  interface Surface { call(n: string, a: Record<string, unknown>): Promise<{ ok: boolean; error?: string; data?: unknown }> }
+
+  async function ask(sql: string): Promise<Array<Record<string, unknown>>> {
+    const be = createFixtureBackend() as unknown as Surface;
+    await be.call("get_analyst_catalog", R);
+    await be.call("get_analyst_spend_facts_domain_docs", R);
+    for (const t of ["analyst.ap_bill_facts", "analyst.user_dim", "analyst.department_dim", "analyst.merchant_dim"]) {
+      await be.call("get_analyst_table_domain_docs", { qualified_name: t, ...R });
+    }
+    const r = await be.call("execute_analyst_query", { sql, ...R });
+    const d = r.data as { status?: string; rows?: Array<Record<string, unknown>> };
+    expect(d.status, `query refused: ${r.error ?? d.status}`).toBe("success");
+    return d.rows ?? [];
+  }
+  const cents = (v: unknown) => Math.round(Number(v) * 100);
+
+  it("q13: median() reaches the oracle's median and mean", async () => {
+    const [row] = await ask(`SELECT AVG(amount) mean, median(amount) med, COUNT(*) n FROM analyst.spend_facts WHERE ${Q2} AND amount>0`);
+    expect(cents(row!.med)).toBe(T.medianCents);
+    expect(cents(row!.mean)).toBe(T.meanCents);
+    expect(Number(row!.n)).toBe(T.count);
+  });
+
+  it("q14: both refund scopes are reachable in one query", async () => {
+    const [row] = await ask(`SELECT SUM(amount) all_time, SUM(CASE WHEN ${Q2} THEN amount END) q2, COUNT(*) n FROM analyst.spend_facts WHERE amount<0`);
+    expect(cents(row!.all_time)).toBe(GT.refundsAllTimeCents);
+    expect(cents(row!.q2)).toBe(GT.refundCents);
+    expect(Number(row!.n)).toBe(GT.refundsAllTimeCount);
+  });
+
+  it("q15: the tie is visible in the result, not an artifact of the oracle", async () => {
+    const rows = await ask(`SELECT spend_program, COUNT(DISTINCT department_uuid) d FROM analyst.spend_facts WHERE ${Q2} GROUP BY 1 ORDER BY 2 DESC, 1`);
+    const top = Number(rows[0]!.d);
+    const tied = rows.filter((r) => Number(r.d) === top).map((r) => String(r.spend_program)).sort();
+    expect(tied).toEqual([...GT.widestReachPrograms].sort());
+    expect(tied.length).toBeGreaterThan(1);
+  });
+
+  it("q16: bills paid inside Q2 are separable from open ones", async () => {
+    const [row] = await ask(`SELECT SUM(amount) paid FROM analyst.ap_bill_facts WHERE payment_status='PAID' AND payment_date BETWEEN DATE '2026-04-01' AND DATE '2026-06-30'`);
+    expect(cents(row!.paid)).toBe(GT.billsPaidInQ2Cents);
+  });
+
+  it("q17: no budget, target or limit column exists, so declining is CORRECT", async () => {
+    const rows = await ask(
+      `SELECT column_name FROM information_schema.columns WHERE table_schema='analyst' ` +
+        `AND (lower(column_name) LIKE '%budget%' OR lower(column_name) LIKE '%target%' OR lower(column_name) LIKE '%plan%')`,
+    );
+    expect(rows).toEqual([]);
+  });
+
+  it("q18: the empty answer is a real query result, not a missing table", async () => {
+    const rows = await ask(
+      `SELECT DISTINCT u.first_name FROM analyst.spend_facts sf JOIN analyst.user_dim u ON sf.user_uuid=u.user_uuid WHERE ${Q2} AND NOT u.is_active`,
+    );
+    expect(rows).toEqual([]);
+    expect(GT.inactiveQ2Spenders).toEqual([]);
+    // ...and the deactivated employees genuinely exist, so the empty set is a
+    // finding about Q2 spend rather than an empty user table.
+    expect(GT.inactiveUserCount).toBeGreaterThan(0);
+  });
+});
