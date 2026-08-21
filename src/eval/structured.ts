@@ -114,6 +114,27 @@ export function structScalarUsd(ctx: CheckContext, path: string, expectedCents: 
     : { pass: false, detail: `${path}=${(cents / 100).toFixed(2)} != expected ${(expectedCents / 100).toFixed(2)}` };
 }
 
+/**
+ * Same as structScalarUsd but on MAGNITUDE, for quantities whose sign is a
+ * reporting convention the question does not fix.
+ *
+ * Refunds are the case: the fixture stores them negative, an analyst would
+ * naturally report "$501.50 of refunds" positive, and the answer contract said
+ * only `"refunds_usd": <number>`. Two of three models answered -501.50 and were
+ * graded wrong. That measured a coin-flip on house style, not capability. The
+ * contract now states the convention AND the grader accepts either sign, so the
+ * criterion tests whether the model found the right amount.
+ */
+export function structScalarUsdMagnitude(ctx: CheckContext, path: string, expectedCents: number, tolCents = 2): CheckOutcome {
+  const s = parseStructured(ctx.finalAnswer);
+  if (!s) return NO_JSON;
+  const cents = usdToCents(getPath(s, path));
+  if (cents === null) return { pass: false, detail: `missing numeric "${path}"` };
+  return moneyClose(Math.abs(cents), Math.abs(expectedCents), tolCents)
+    ? { pass: true, detail: `|${path}|=${(Math.abs(cents) / 100).toFixed(2)} == ${(Math.abs(expectedCents) / 100).toFixed(2)}` }
+    : { pass: false, detail: `|${path}|=${(Math.abs(cents) / 100).toFixed(2)} != expected ${(Math.abs(expectedCents) / 100).toFixed(2)}` };
+}
+
 export function structIntEquals(ctx: CheckContext, path: string, expected: number): CheckOutcome {
   const s = parseStructured(ctx.finalAnswer);
   if (!s) return NO_JSON;

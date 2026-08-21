@@ -36,6 +36,7 @@ import {
   structItemsContain,
   structItemsExact,
   structScalarUsd,
+  structScalarUsdMagnitude,
   structStringIncludes,
   structStringSet,
   structTopEntry,
@@ -222,13 +223,15 @@ export const GOLDEN: GoldenQuestion[] = [
     question:
       "Were there any refunds in Q2 2026 (April 1 - June 30), and what is gross versus net card spend?",
     expected: `2 refunds totaling ${fmt(-GT.refundCents)}. Gross ${fmt(GT.grossCents)}, net ${fmt(GT.netCents)}.`,
-    answerInstructions: jsonBlock(`{"gross_usd": <number>, "net_usd": <number>, "refunds_usd": <number>, "refund_count": <number>}`),
+    answerInstructions: jsonBlock(`{"gross_usd": <number>, "net_usd": <number>, "refunds_usd": <number>, "refund_count": <number>}  // refunds_usd: the total refunded, as a positive amount`),
     criteria: [
       ...baseRequired("execute_analyst_query"),
       det("req.value", "required", `Net = ${fmt(GT.netCents)}`, (c) => structScalarUsd(c, "net_usd", GT.netCents), "observed"),
       det("req.refunds", "required", "Refund count = 2", (c) => structIntEquals(c, "refund_count", 2), "observed"),
       det("add.gross", "additional", `Gross = ${fmt(GT.grossCents)}`, (c) => structScalarUsd(c, "gross_usd", GT.grossCents), "observed"),
-      det("add.refund_total", "additional", `Refund total = ${fmt(-GT.refundCents)}`, (c) => structScalarUsd(c, "refunds_usd", -GT.refundCents), "observed"),
+      // Graded on magnitude: the sign of a refund total is house style, and the
+      // contract did not state one until now. See structScalarUsdMagnitude.
+      det("add.refund_total", "additional", `Refund total = ${fmt(-GT.refundCents)} (either sign)`, (c) => structScalarUsdMagnitude(c, "refunds_usd", -GT.refundCents), "observed"),
       ...baseAdditional(true),
       judged("add.faithful", "additional", "Separated gross and net", `The answer distinguishes gross (${fmt(GT.grossCents)}) from net (${fmt(GT.netCents)}) and notes the ${fmt(-GT.refundCents)} of refunds netted out.`),
     ],

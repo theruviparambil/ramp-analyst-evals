@@ -212,6 +212,19 @@ describe("grading holes: answers that must not score as correct", () => {
     expect(reqValue(q1)(ctx(q1, block({ net_spend_usd: 189019.6 }))).pass).toBe(false);
   });
 
+  it("q10: a refund total reported with either sign passes", () => {
+    // gpt-5.1 and claude-4.6 both answered -501.50 and were graded wrong,
+    // because the answer contract never stated a sign convention.
+    const q10 = byId("q10_refunds");
+    const c = q10.criteria.find((x) => x.id === "add.refund_total");
+    if (!c?.run) throw new Error("q10 has no runnable add.refund_total");
+    for (const v of [-501.5, 501.5]) {
+      expect(c.run(ctx(q10, block({ refunds_usd: v }))).pass).toBe(true);
+    }
+    // A wrong magnitude is still wrong.
+    expect(c.run(ctx(q10, block({ refunds_usd: -601.5 }))).pass).toBe(false);
+  });
+
   it("q02: cosmetic vendor formatting and known aliases still pass", () => {
     expect(reqValue(q2)(ctx(q2, block({ top_vendor: { name: "Google Ads (Advertising)", spend_usd: 42500 } }))).pass).toBe(true);
     expect(reqValue(q2)(ctx(q2, block({ top_vendor: { name: "  google   adwords ", spend_usd: 42500 } }))).pass).toBe(true);
