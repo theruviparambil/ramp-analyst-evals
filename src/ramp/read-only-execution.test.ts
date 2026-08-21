@@ -1,5 +1,6 @@
 import { describe, expect, it, beforeAll } from "vitest";
 import { AnalystArtifact } from "./analyst-db.js";
+import { TRANSACTIONS } from "../fixture/data.js";
 
 /**
  * Executes queries and then checks the database, which the guard's own unit
@@ -18,7 +19,11 @@ import { AnalystArtifact } from "./analyst-db.js";
 
 // The whole table, including the rows outside Q2 that make the date filter
 // load-bearing. This suite is about mutation, not about the reporting period.
-const ROWS = 217;
+// Derived, not pinned: the fixture gained an orphan-merchant row and two
+// pre-transfer charges, and a hand-updated literal here would have to be
+// chased every time the data grows. What these tests assert is that the count
+// is UNCHANGED by an attack, not what the count happens to be.
+const ROWS = TRANSACTIONS.length;
 
 describe("read-only enforcement, end to end", () => {
   let db: AnalystArtifact;

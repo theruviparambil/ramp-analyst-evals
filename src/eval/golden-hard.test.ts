@@ -16,6 +16,8 @@
 import { describe, expect, it } from "vitest";
 import { createFixtureBackend } from "../ramp/backend.js";
 import * as GT from "../fixture/ground-truth.js";
+import { Q2_TRANSACTIONS } from "../fixture/ground-truth.js";
+import { MERCHANTS, USERS } from "../fixture/data.js";
 import { GOLDEN } from "./golden.js";
 
 const byId = (id: string) => {
@@ -258,5 +260,140 @@ describe("q17 accepts schema inspection as grounding", () => {
 
   it("still fails an agent that answered without looking at anything", () => {
     expect(grounded.run!(ctxWith([])).pass).toBe(false);
+  });
+});
+
+/**
+ * q19-q22: built from the 2026-08-21 calibration transcripts rather than from
+ * intuition.
+ *
+ * That pass showed gpt-5.6-terra and claude-sonnet-5 both scoring 100% REQUIRED
+ * across all eighteen questions, in 3-7 tool calls each, with the six "hard"
+ * ones taking 3-4 calls exactly like the easy ones. They were single-query
+ * questions with a judgment twist, which is not difficulty.
+ *
+ * Each of these four instead has a wrong answer the DOCUMENTED, obvious
+ * approach produces: an inner join the docs recommend, a premise stated by the
+ * user, an ambiguity with two defensible readings, or a dimension join that
+ * quietly reattributes a transferred employee's spend.
+ */
+describe("q19 vendor reconciliation: the documented join drops a row", () => {
+  const R = GT.vendorReconciledCents;
+  const ok = { total_spend_usd: R.totalCents / 100, vendor_sum_usd: R.viaMerchantJoinCents / 100, gap_usd: R.droppedCents / 100, gap_explanation: `${GT.orphanMerchantName} is missing from merchant_dim` };
+  const block = (o: unknown) => "Analysis.\n```json\n" + JSON.stringify(o) + "\n```";
+  const req = (a: string) => requiredContent("q19_vendor_reconciliation", a);
+
+  it("accepts the reconciled answer", () => {
+    expect(req(block(ok)).pass).toBe(true);
+  });
+
+  it("rejects reporting the joined sum as the total", () => {
+    // merchant_dim is what the domain docs tell you to join for canonical
+    // vendor totals, so this is the answer a compliant agent produces.
+    expect(req(block({ ...ok, total_spend_usd: R.viaMerchantJoinCents / 100, gap_usd: 0 })).pass).toBe(false);
+  });
+
+  it("rejects claiming it reconciles when it does not", () => {
+    expect(req(block({ ...ok, vendor_sum_usd: R.totalCents / 100, gap_usd: 0 })).pass).toBe(false);
+  });
+
+  it("the gap is real and material", () => {
+    expect(R.droppedCents).toBe(R.totalCents - R.viaMerchantJoinCents);
+    expect(R.droppedCount).toBeGreaterThan(0);
+  });
+});
+
+describe("q20 travel: graded on internal consistency, not one blessed number", () => {
+  const T = GT.travelSpend;
+  const block = (o: unknown) => "Analysis.\n```json\n" + JSON.stringify(o) + "\n```";
+  const req = (a: string) => requiredContent("q20_travel_definition", a);
+
+  it("accepts either reading when the figure matches the declared basis", () => {
+    expect(req(block({ travel_usd: T.byProgramCents / 100, basis: "spend_program", note: "" })).pass).toBe(true);
+    expect(req(block({ travel_usd: T.byCategoryCents / 100, basis: "merchant_category", note: "" })).pass).toBe(true);
+  });
+
+  it("rejects a figure that contradicts the basis it claims", () => {
+    expect(req(block({ travel_usd: T.byCategoryCents / 100, basis: "spend_program", note: "" })).pass).toBe(false);
+  });
+
+  it("rejects declaring no basis, because the ambiguity is the question", () => {
+    expect(req(block({ travel_usd: T.byProgramCents / 100, note: "travel" })).pass).toBe(false);
+  });
+
+  it("the two readings genuinely differ", () => {
+    expect(T.byProgramCents).not.toBe(T.byCategoryCents);
+    expect(Math.abs(T.byProgramCents - T.byCategoryCents)).toBeGreaterThan(100_000);
+  });
+});
+
+describe("q21 Marketing: the premise in the question is false", () => {
+  const M = GT.marketingMonthlyCents;
+  const base = { premise_correct: false, direction: "increase", may_usd: M[1]!.cents / 100, june_usd: M[2]!.cents / 100, vendors_cut: [] as string[] };
+  const block = (o: unknown) => "Analysis.\n```json\n" + JSON.stringify(o) + "\n```";
+  const req = (a: string) => requiredContent("q21_marketing_june_premise", a);
+
+  it("June really did rise sharply, so the question is wrong", () => {
+    expect(M[2]!.cents).toBeGreaterThan(M[1]!.cents * 3);
+  });
+
+  it("accepts rejecting the premise", () => {
+    expect(req(block(base)).pass).toBe(true);
+  });
+
+  it("rejects accepting the premise and inventing cuts", () => {
+    expect(req(block({ ...base, premise_correct: true, direction: "decrease", vendors_cut: ["Meta Ads"] })).pass).toBe(false);
+  });
+
+  it("rejects correcting the premise but still naming vendors cut", () => {
+    // The half-right answer: says "actually it rose" and then answers the
+    // original question anyway.
+    expect(req(block({ ...base, vendors_cut: ["Meta Ads"] })).pass).toBe(false);
+  });
+});
+
+describe("q22 concentration: multi-hop, and it inherits the transfer trap", () => {
+  const C = GT.topDepartmentConcentration;
+  const rows = (f: (x: (typeof C)[number]) => Record<string, unknown>) => ({ departments: C.map(f) });
+  const block = (o: unknown) => "Analysis.\n```json\n" + JSON.stringify(o) + "\n```";
+  const req = (a: string) => requiredContent("q22_vendor_concentration", a);
+  const good = rows((x) => ({ department: x.department, top_vendor: x.vendor, vendor_spend_usd: x.vendorCents / 100, department_spend_usd: x.departmentCents / 100, share_pct: Number(x.sharePct.toFixed(1)) }));
+
+  it("accepts both departments with correct vendors, totals and shares", () => {
+    expect(req(block(good)).pass).toBe(true);
+  });
+
+  it("rejects department totals attributed through the CURRENT department", () => {
+    // The transfer moves Marcus Webb's April and May charges. The wrong join
+    // leaves the top VENDOR untouched and only shifts the department total,
+    // which is why the total is graded as required rather than as a bonus.
+    const wrong = rows((x) => ({
+      department: x.department,
+      top_vendor: x.vendor,
+      vendor_spend_usd: x.vendorCents / 100,
+      department_spend_usd: (x.department === "Engineering" ? 10_904_750 : x.departmentCents) / 100,
+      share_pct: Number(x.sharePct.toFixed(1)),
+    }));
+    expect(req(block(wrong)).pass).toBe(false);
+  });
+});
+
+describe("the fixture traps are real", () => {
+  it("an employee's at-charge department differs from their current one", () => {
+    const misattributed = Q2_TRANSACTIONS.filter((t) => {
+      const u = USERS.find((x) => x.user_uuid === t.user_uuid);
+      return u !== undefined && u.department_uuid !== t.department_uuid;
+    });
+    expect(misattributed.length).toBeGreaterThan(0);
+    // Material, not cosmetic: a $600 discrepancy would test nothing.
+    const cents = misattributed.reduce((a, t) => a + t.amount_cents, 0);
+    expect(Math.abs(cents)).toBeGreaterThan(2_000_000);
+  });
+
+  it("one Q2 merchant is absent from merchant_dim, so inner joins drop it", () => {
+    const known = new Set(MERCHANTS.map((m) => m.merchant_uuid));
+    const orphans = Q2_TRANSACTIONS.filter((t) => !known.has(t.merchant_uuid));
+    expect(orphans).toHaveLength(1);
+    expect(orphans[0]!.merchant_name).toBe(GT.orphanMerchantName);
   });
 });

@@ -155,7 +155,10 @@ interface UserSeed {
 
 const USER_SEEDS: UserSeed[] = [
   { first: "Priya", last: "Nair", dept: "eng", role: "ADMIN" },
-  { first: "Marcus", last: "Webb", dept: "eng", role: "MEMBER" },
+  // Transferred eng -> sales on 2026-06-01. user_dim carries the CURRENT
+  // department; spend_facts carries the department AT TIME OF CHARGE. See
+  // DEPARTMENT_TRANSFER below.
+  { first: "Marcus", last: "Webb", dept: "sales", role: "MEMBER" },
   { first: "Dana", last: "Liu", dept: "eng", role: "MEMBER" },
   { first: "Sam", last: "Okoro", dept: "eng", role: "MEMBER" },
   { first: "Jordan", last: "Reyes", dept: "sales", role: "MEMBER" },
@@ -260,12 +263,30 @@ interface TxnInput {
   program: string;
   memo: string;
   policy?: "in_policy" | "out_of_policy";
+  /**
+   * Record the spend against a merchant that is NOT in merchant_dim.
+   *
+   * A real gap: a merchant is authorized on the card before the dimension table
+   * has caught up. It matters because the domain docs tell an agent to join
+   * merchant_dim and group by normalized_merchant_name for canonical vendor
+   * totals, and an INNER JOIN silently drops this row. Following the documented
+   * advice therefore under-reports total vendor spend, with no error and no
+   * empty result to notice.
+   */
+  orphanMerchant?: { name: string; category: string };
 }
 
 const TXNS: TxnRecord[] = [];
 
 function addTxn(t: TxnInput): void {
-  const m = merchantByName(t.merchant);
+  const m = t.orphanMerchant
+    ? {
+        // Deliberately NOT registered in MERCHANTS, so joins to merchant_dim miss it.
+        merchant_uuid: uuidFrom(`orphan-merchant:${t.orphanMerchant.name}`),
+        merchant_name: t.orphanMerchant.name,
+        merchant_category: t.orphanMerchant.category,
+      }
+    : merchantByName(t.merchant);
   const date = isoDate(2026, t.month, t.day);
   const hour = 8 + Math.floor(rng() * 11);
   const minute = Math.floor(rng() * 60);
@@ -431,6 +452,56 @@ addTxn({ merchant: "Amazon Web Services", month: 7, day: 9, amountCents: 1_610_0
 addTxn({ merchant: "Notion", month: 7, day: 14, amountCents: 372_000, user: userByName("Nina", "Patel"), program: "G&A", memo: "Q3 seats renewal, next quarter" });
 addTxn({ merchant: "Uber", month: 7, day: 17, amountCents: 18_450, user: userByName("Marcus", "Webb"), program: "Sales", memo: "Q3 client visit, next quarter" });
 addTxn({ merchant: "Amazon", month: 7, day: 21, amountCents: -24_600, user: userByName("Nina", "Patel"), program: "G&A", memo: "Refund: Q3 returned monitor, next quarter" });
+
+// ─── (f) ORPHANED MERCHANT: on the card, absent from merchant_dim ────────────
+//
+// Sized to matter without displacing the top vendor: it lands mid-table, so a
+// "top vendor" answer is unchanged while any RECONCILIATION of vendor totals
+// against total spend is off by exactly this amount.
+addTxn({
+  merchant: "(orphan)",
+  orphanMerchant: { name: "Vanta", category: "SaaS / Software" },
+  month: 5,
+  day: 21,
+  amountCents: 1_800_000,
+  user: userByName("Priya", "Nair"),
+  program: "Software",
+  memo: "Vanta compliance automation, annual",
+});
+
+// Marcus Webb's pre-transfer spend, while he was still in Engineering. Without
+// these he is a trivial spender and the transfer moves only $642, which no
+// analyst would notice or care about. With them the misattribution is material,
+// which is the whole point: the wrong join has to produce a wrong number big
+// enough to matter, or the question tests nothing.
+addTxn({ merchant: "Cloudflare", month: 4, day: 14, amountCents: 1_240_000, user: userByName("Marcus", "Webb"), program: "Cloud", memo: "Edge + WAF annual commit" });
+addTxn({ merchant: "GitHub", month: 5, day: 6, amountCents: 860_000, user: userByName("Marcus", "Webb"), program: "Software", memo: "Enterprise seats, annual" });
+
+// ─── (g) DEPARTMENT TRANSFER: at-time-of-charge vs current department ────────
+//
+// Marcus Webb moved Engineering -> Sales on 2026-06-01. user_dim.department_name
+// is his CURRENT department; spend_facts.department_uuid is the department at the
+// time of the charge. The domain docs describe both, so this is not a gotcha: it
+// is the ordinary reason those two columns exist. Grouping spend by a join to
+// user_dim silently reassigns his April and May charges to Sales, which is a
+// wrong answer that looks completely reasonable.
+export const DEPARTMENT_TRANSFER = {
+  user: "Marcus Webb",
+  from: "Engineering",
+  to: "Sales",
+  effective: "2026-06-01",
+} as const;
+
+(() => {
+  const marcusWebb = userByName("Marcus", "Webb");
+  const engineering = DEPARTMENTS.find((d) => d.department_name === DEPARTMENT_TRANSFER.from);
+  if (!engineering) throw new Error("fixture: Engineering department missing");
+  for (const t of TXNS) {
+    if (t.user_uuid === marcusWebb.user_uuid && t.transaction_date < DEPARTMENT_TRANSFER.effective) {
+      t.department_uuid = engineering.department_uuid;
+    }
+  }
+})();
 
 export const TRANSACTIONS: TxnRecord[] = TXNS;
 

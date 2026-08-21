@@ -203,6 +203,35 @@ export function structStringSetExact(ctx: CheckContext, field: string, expected:
   };
 }
 
+/**
+ * The reported number must match the definition the answer CLAIMS to have used.
+ *
+ * For questions with more than one defensible reading, grading the number alone
+ * would either fail a correct answer or accept an incoherent one. This grades
+ * INTERNAL CONSISTENCY instead: declare a basis, and the figure has to be that
+ * basis's figure. Declaring nothing fails, because the ambiguity is the point.
+ */
+export function structMatchesDeclaredBasis(
+  ctx: CheckContext,
+  basisPath: string,
+  valuePath: string,
+  options: ReadonlyArray<{ basis: string; cents: number }>,
+): CheckOutcome {
+  const s = parseStructured(ctx.finalAnswer);
+  if (!s) return NO_JSON;
+  const declared = norm(getPath(s, basisPath));
+  if (!declared) return { pass: false, detail: `no "${basisPath}" declared; the reading has to be stated` };
+  const chosen = options.find((o) => nameMatches(declared, o.basis) || declared.includes(norm(o.basis)));
+  if (!chosen) {
+    return { pass: false, detail: `"${basisPath}"="${declared}" is not one of: ${options.map((o) => o.basis).join(", ")}` };
+  }
+  const cents = usdToCents(getPath(s, valuePath));
+  if (cents === null) return { pass: false, detail: `missing numeric "${valuePath}"` };
+  return moneyClose(cents, chosen.cents)
+    ? { pass: true, detail: `${valuePath}=${(cents / 100).toFixed(2)} is consistent with basis "${chosen.basis}"` }
+    : { pass: false, detail: `declared "${chosen.basis}" but reported ${(cents / 100).toFixed(2)}, which is not that basis (${(chosen.cents / 100).toFixed(2)})` };
+}
+
 // ─── Top entry {name, value} ──────────────────────────────────────────────────
 
 export function structTopEntry(ctx: CheckContext, obj: string, nameField: string, valueField: string, expectedName: string, expectedCents: number): CheckOutcome {

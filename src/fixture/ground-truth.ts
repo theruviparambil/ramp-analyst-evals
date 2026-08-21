@@ -303,6 +303,70 @@ export const inactiveQ2Spenders: string[] = [
   ),
 ].sort();
 
+// ─── Traps that need no clever question, only the obvious wrong join ─────────
+
+/**
+ * Vendor spend reconciled against total spend.
+ *
+ * The domain docs tell an agent to join merchant_dim and group by
+ * normalized_merchant_name for canonical vendor totals. One Q2 charge is to a
+ * merchant absent from that dimension, so the documented INNER JOIN silently
+ * drops it: no error, no empty result, just a vendor total that is short by
+ * $18,000 and still looks completely plausible. Following the instructions is
+ * what produces the wrong answer, which is what makes this worth asking.
+ */
+export const orphanMerchantName = "Vanta";
+export const vendorReconciledCents = (() => {
+  const known = new Set(MERCHANTS.map((m) => m.merchant_uuid));
+  const orphaned = Q2_TRANSACTIONS.filter((t) => !known.has(t.merchant_uuid));
+  return {
+    totalCents: netCents,
+    viaMerchantJoinCents: netCents - sumCents(orphaned),
+    droppedCents: sumCents(orphaned),
+    droppedCount: orphaned.length,
+  } as const;
+})();
+
+/**
+ * "Travel spend" has two defensible readings that differ by $6,750.
+ *
+ * spend_program='Travel' is the allocation bucket; the Airlines/Lodging/
+ * Rideshare categories are what the merchants actually are. The gap is the Nobu
+ * dinner, booked to the Travel PROGRAM but sitting in the Restaurants CATEGORY.
+ * Neither reading is wrong. Picking one silently is.
+ */
+export const TRAVEL_CATEGORIES = ["Airlines", "Lodging", "Rideshare"] as const;
+export const travelSpend = {
+  byProgramCents: sumCents(Q2_TRANSACTIONS.filter((t) => t.spend_program === "Travel")),
+  byCategoryCents: sumCents(Q2_TRANSACTIONS.filter((t) => (TRAVEL_CATEGORIES as readonly string[]).includes(t.merchant_category))),
+} as const;
+
+/**
+ * Marketing's Q2 by month, for a question whose PREMISE is false.
+ *
+ * June is roughly 4x May. Asked why spend "dropped", the failure is not a wrong
+ * number, it is accepting the framing and inventing a cause for something that
+ * did not happen.
+ */
+export const marketingMonthlyCents = (() => {
+  const rows = Q2_TRANSACTIONS.filter((t) => deptNameByUuid.get(t.department_uuid) === "Marketing");
+  const byMonth = new Map<number, number>();
+  for (const t of rows) byMonth.set(monthOf(t), (byMonth.get(monthOf(t)) ?? 0) + t.amount_cents);
+  return [...byMonth].sort((a, b) => a[0] - b[0]).map(([month, cents]) => ({ month, cents }));
+})();
+
+/** Vendor concentration for the two biggest-spending departments. Four dependent steps. */
+export const topDepartmentConcentration = departmentSpend.slice(0, 2).map((d) => {
+  const rows = Q2_TRANSACTIONS.filter((t) => deptNameByUuid.get(t.department_uuid) === d.key);
+  const byVendor = new Map<string, number>();
+  for (const t of rows) {
+    const v = normalizedByRawMerchant.get(t.merchant_name) ?? t.merchant_name;
+    byVendor.set(v, (byVendor.get(v) ?? 0) + t.amount_cents);
+  }
+  const [vendor, cents] = [...byVendor].sort((a, b) => b[1] - a[1])[0]!;
+  return { department: d.key, vendor, vendorCents: cents, departmentCents: d.cents, sharePct: (cents / d.cents) * 100 };
+});
+
 // ─── Bundle for reporting / --ground-truth ─────────────────────────────────────
 
 export const GROUND_TRUTH = {
@@ -333,4 +397,9 @@ export const GROUND_TRUTH = {
   billsPaidInQ2Cents,
   q2CashOutCents,
   inactiveQ2Spenders,
+  orphanMerchantName,
+  vendorReconciledCents,
+  travelSpend,
+  marketingMonthlyCents,
+  topDepartmentConcentration,
 } as const;

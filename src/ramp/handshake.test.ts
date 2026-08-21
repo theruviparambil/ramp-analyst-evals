@@ -5,6 +5,7 @@
 import { describe, expect, it } from "vitest";
 import { createFixtureBackend } from "./backend.js";
 import { referencedTables } from "./analyst-db.js";
+import { netCents } from "../fixture/ground-truth.js";
 
 // Scoped to Q2, like every question in the golden set. Without the WHERE clause
 // this returns $274,833.10 rather than the oracle's $188,925.60, because the
@@ -41,7 +42,10 @@ describe("docs_required handshake", () => {
     await b.call("get_analyst_spend_facts_domain_docs", { rationale: "grain" });
     const r3 = (await b.call("execute_analyst_query", { sql: netSql, rationale: "net" })).data as Record<string, unknown>;
     expect(r3.status).toBe("success");
-    expect((r3.rows as Array<{ net: number }>)[0]!.net).toBeCloseTo(188925.6, 2);
+    // Derived from the oracle, not pinned. netSql is the Q2 window, so this is
+    // netCents by construction; a literal here silently rots whenever the
+    // fixture grows, and this test is about the HANDSHAKE, not the total.
+    expect((r3.rows as Array<{ net: number }>)[0]!.net).toBeCloseTo(netCents / 100, 2);
   });
 
   it("requires docs for EACH referenced table (joins included)", async () => {

@@ -38,6 +38,8 @@ import {
   structIntEquals,
   structItemsContain,
   structItemsExact,
+  parseStructured,
+  structMatchesDeclaredBasis,
   structScalarUsd,
   structScalarUsdMagnitude,
   structStringIncludes,
@@ -400,6 +402,126 @@ export const GOLDEN: GoldenQuestion[] = [
       }, "observed"),
       ...baseAdditional(true),
       judged("add.faithful", "additional", "Distinguished none from unknown", `The answer says the data CAN answer this and that no deactivated employee had Q2 card spend. It does not claim the question is unanswerable, and does not name anyone.`),
+    ],
+  },
+  // ─── Traps the calibration run earned ───────────────────────────────────────
+  //
+  // A 1-sample pass of gpt-5.6-terra and claude-sonnet-5 (2026-08-21) scored
+  // 100% REQUIRED on all eighteen questions above, in 3-7 tool calls each. The
+  // six "hard" ones took 3-4 calls, exactly like the easy ones: they were
+  // single-query questions with a judgment twist, and that is not difficulty.
+  //
+  // These four are built from what the transcripts actually showed. Each has a
+  // wrong answer that the DOCUMENTED, obvious approach produces.
+  {
+    id: "q19_vendor_reconciliation",
+    question:
+      "What was total Q2 2026 card spend (April 1 - June 30), and does it reconcile to the sum of " +
+      "spend grouped by vendor? If there is a gap, explain it.",
+    expected: `Total ${fmt(GT.vendorReconciledCents.totalCents)}. Grouping by vendor through merchant_dim returns only ${fmt(GT.vendorReconciledCents.viaMerchantJoinCents)}: ${fmt(GT.vendorReconciledCents.droppedCents)} of ${GT.orphanMerchantName} spend is dropped because that merchant is missing from merchant_dim, so the documented inner join silently loses the row.`,
+    answerInstructions: jsonBlock(`{"total_spend_usd": <number>, "vendor_sum_usd": <number>, "gap_usd": <number>, "gap_explanation": <string>}`),
+    criteria: [
+      ...baseRequired("execute_analyst_query"),
+      // The docs tell you to join merchant_dim for canonical vendor totals, and
+      // that join drops a row with no error and no empty result. Following the
+      // instructions is what produces the wrong number.
+      det("req.value", "required", `Total = ${fmt(GT.vendorReconciledCents.totalCents)}`, (c) => structScalarUsd(c, "total_spend_usd", GT.vendorReconciledCents.totalCents), "observed"),
+      det("req.gap", "required", `Gap = ${fmt(GT.vendorReconciledCents.droppedCents)}`, (c) => structScalarUsdMagnitude(c, "gap_usd", GT.vendorReconciledCents.droppedCents), "observed"),
+      det("add.vendor_sum", "additional", `Vendor sum via the join = ${fmt(GT.vendorReconciledCents.viaMerchantJoinCents)}`, (c) => structScalarUsd(c, "vendor_sum_usd", GT.vendorReconciledCents.viaMerchantJoinCents), "observed"),
+      det("add.names_vendor", "additional", `Names ${GT.orphanMerchantName} as the dropped merchant`, (c) => answerMentionsAny(c, [GT.orphanMerchantName]), "observed"),
+      ...baseAdditional(true),
+      judged("add.faithful", "additional", "Explained the gap correctly", `The answer attributes the ${fmt(GT.vendorReconciledCents.droppedCents)} gap to a merchant missing from merchant_dim (${GT.orphanMerchantName}) being dropped by the join, not to refunds, rounding, or a date filter.`),
+    ],
+  },
+  {
+    id: "q20_travel_definition",
+    question: "How much did we spend on travel in Q2 2026 (April 1 - June 30)?",
+    expected: `Two defensible readings that differ by ${fmt(GT.travelSpend.byProgramCents - GT.travelSpend.byCategoryCents)}: spend_program='Travel' gives ${fmt(GT.travelSpend.byProgramCents)}, while the Airlines/Lodging/Rideshare categories give ${fmt(GT.travelSpend.byCategoryCents)}. The gap is a restaurant charge booked to the Travel program. A usable answer states which reading it used.`,
+    answerInstructions: jsonBlock(`{"travel_usd": <number>, "basis": "spend_program" or "merchant_category", "note": <string>}`),
+    criteria: [
+      ...baseRequired("execute_analyst_query"),
+      // Graded on INTERNAL CONSISTENCY, not on one blessed number. Either
+      // reading is defensible; choosing silently is not, and grading the figure
+      // alone would fail a correct answer or accept an incoherent one.
+      det("req.value", "required", "The figure matches the definition the answer says it used", (c) => structMatchesDeclaredBasis(c, "basis", "travel_usd", [
+        { basis: "spend_program", cents: GT.travelSpend.byProgramCents },
+        { basis: "merchant_category", cents: GT.travelSpend.byCategoryCents },
+      ]), "observed"),
+      det("add.both_readings", "additional", "Mentions that the other reading gives a different number", (c) => answerMentionsAny(c, ["merchant_category", "spend_program", "category", "program"]), "observed"),
+      ...baseAdditional(true),
+      judged("add.faithful", "additional", "Surfaced the ambiguity", `The answer makes clear that "travel" can be read as the spend_program bucket or as the travel merchant categories, that the two give different totals, and which one its number refers to.`),
+    ],
+  },
+  {
+    id: "q21_marketing_june_premise",
+    question: "Marketing's spend dropped in June. Which vendors did they cut back on, and by how much?",
+    expected: `The premise is false. Marketing spent ${fmt(GT.marketingMonthlyCents[1]!.cents)} in May and ${fmt(GT.marketingMonthlyCents[2]!.cents)} in June, roughly a 4x INCREASE, driven by advertising. Nothing was cut back. The right answer rejects the premise and says what actually happened.`,
+    answerInstructions: jsonBlock(`{"premise_correct": <true or false>, "direction": "increase" or "decrease", "may_usd": <number>, "june_usd": <number>, "vendors_cut": [<string>, ... empty if none]}`),
+    criteria: [
+      ...baseRequired("execute_analyst_query"),
+      // A FALSE PREMISE, not a hard calculation. Both models handled the
+      // unanswerable question (q17) correctly, so calibration on a clean "I
+      // cannot know" is not a weakness. Being told something untrue by a
+      // confident-sounding user is a different failure mode, and the tempting
+      // answer is to accept the framing and invent a cause.
+      det("req.value", "required", "Rejects the false premise", (c) => structBool(c, "premise_correct", false), "observed"),
+      det("req.direction", "required", "Says spend INCREASED", (c) => structStringIncludes(c, "direction", "increase"), "observed"),
+      det("req.no_fabrication", "required", "Names no vendors as cut back", (c) => structStringSetExact(c, "vendors_cut", []), "observed"),
+      det("add.june", "additional", `June = ${fmt(GT.marketingMonthlyCents[2]!.cents)}`, (c) => structScalarUsd(c, "june_usd", GT.marketingMonthlyCents[2]!.cents), "observed"),
+      det("add.may", "additional", `May = ${fmt(GT.marketingMonthlyCents[1]!.cents)}`, (c) => structScalarUsd(c, "may_usd", GT.marketingMonthlyCents[1]!.cents), "observed"),
+      ...baseAdditional(true),
+      judged("add.faithful", "additional", "Corrected the question", `The answer states plainly that Marketing's June spend rose sharply rather than dropped, gives both months, and does not invent vendors that were cut.`),
+    ],
+  },
+  {
+    id: "q22_vendor_concentration",
+    question:
+      "For the two highest-spending departments in Q2 2026 (April 1 - June 30), what share of each " +
+      "department's spend went to its single largest vendor?",
+    expected: GT.topDepartmentConcentration.map((c) => `${c.department}: ${c.vendor} ${fmt(c.vendorCents)} of ${fmt(c.departmentCents)} (${c.sharePct.toFixed(1)}%)`).join("; "),
+    answerInstructions: jsonBlock(`{"departments": [{"department": <string>, "top_vendor": <string>, "vendor_spend_usd": <number>, "department_spend_usd": <number>, "share_pct": <number>}]}`),
+    criteria: [
+      ...baseRequired("execute_analyst_query"),
+      // Four DEPENDENT steps: rank departments, find each one's top vendor,
+      // total each department, divide. Every question in the suite so far was
+      // answerable in 3-7 tool calls because none of them needed the output of
+      // one aggregate to choose the next.
+      //
+      // It also inherits the department-transfer trap: an employee moved
+      // between these two departments mid-quarter, so attributing spend through
+      // user_dim's CURRENT department instead of spend_facts' at-charge
+      // department changes both totals and therefore both shares.
+      det("req.value", "required", "Both departments, each with the right top vendor and spend", (c) => structItemsExact(c, "departments", "top_vendor", "vendor_spend_usd",
+        GT.topDepartmentConcentration.map((x) => ({ merchant: x.vendor, cents: x.vendorCents }))), "observed"),
+      // REQUIRED, because this is where the department-transfer trap actually
+      // bites: the wrong join leaves Datadog's vendor spend untouched and only
+      // moves the department TOTAL, so grading vendors alone would let it pass.
+      det("req.dept_totals", "required", "Both department totals correct (at-charge attribution)", (c) => {
+        const parsed = parseStructured(c.finalAnswer);
+        const rows = parsed && Array.isArray((parsed as Record<string, unknown>).departments) ? ((parsed as Record<string, unknown>).departments as Array<Record<string, unknown>>) : [];
+        const bad = GT.topDepartmentConcentration.filter((want) => {
+          const got = rows.find((r) => String(r.department ?? "").toLowerCase().includes(want.department.toLowerCase()));
+          const cents = got ? Math.round(Number(String(got.department_spend_usd ?? "").toString().replace(/[$,]/g, "")) * 100) : Number.NaN;
+          return !Number.isFinite(cents) || Math.abs(cents - want.departmentCents) > 2;
+        });
+        return bad.length === 0
+          ? { pass: true, detail: "both department totals match" }
+          : { pass: false, detail: `wrong or missing department total for: ${bad.map((b) => b.department).join(", ")}` };
+      }, "observed"),
+      det("add.shares", "additional", "Both shares correct to a tenth of a point", (c) => {
+        const parsed = parseStructured(c.finalAnswer);
+        const rows = parsed && Array.isArray((parsed as Record<string, unknown>).departments) ? ((parsed as Record<string, unknown>).departments as Array<Record<string, unknown>>) : [];
+        const bad = GT.topDepartmentConcentration.filter((want) => {
+          const got = rows.find((r) => String(r.department ?? "").toLowerCase().includes(want.department.toLowerCase()));
+          const pct = got ? Number(got.share_pct) : Number.NaN;
+          return !Number.isFinite(pct) || Math.abs(pct - want.sharePct) > 0.1;
+        });
+        return bad.length === 0
+          ? { pass: true, detail: `both shares within 0.1pt` }
+          : { pass: false, detail: `wrong or missing share for: ${bad.map((b) => b.department).join(", ")}` };
+      }, "observed"),
+      ...baseAdditional(true),
+      judged("add.faithful", "additional", "Compared the two concentrations", `The answer gives both departments with their largest vendor and that vendor's share, and makes the comparison between them explicit rather than listing two numbers.`),
     ],
   },
 ];
