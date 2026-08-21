@@ -22,6 +22,12 @@ documented stub (see below) for pointing the same tool calls at Ramp's real MCP 
 
 ## Results (real run)
 
+> **Note (2026-08-21):** the runs below cover the original twelve questions. The
+> harder six (q13-q18) and a tightened rubric landed after these were recorded
+> and have not been run against a live model yet. Re-grading these stored answers
+> under the new rubric changes no verdict, so the numbers stand as reported, but
+> they do not yet include the harder set.
+
 12 questions, run **5 times each** so the model-dependent tier reports a mean and
 a range, not a single wobbling number. Agent `gpt-5.1` (OpenAI); judge **Claude
 Sonnet 4.6 on AWS Bedrock, a genuinely different model family from the agent**;
@@ -106,7 +112,7 @@ Reproduce the whole scoring machinery with no key in ~30 seconds:
 
 ```bash
 npm install
-npm test              # 146 tests, fully offline (scripted model + real DuckDB)
+npm test              # 208 tests, fully offline (scripted model + real DuckDB)
 npm run ground-truth  # print the planted patterns and their exact values
 ```
 
@@ -115,7 +121,7 @@ Run the agent live with one key:
 ```bash
 cp .env.example .env             # one of OPENROUTER / OPENAI / ANTHROPIC
 npm run demo                     # first 6 questions (cheap)
-npm run eval -- --samples=5      # all 12, variance-controlled, + the eval gate
+npm run eval -- --samples=5      # all 18, variance-controlled, + the eval gate
 npm run ask -- "How much did we spend with Delta in Q2?"
 ```
 
@@ -416,10 +422,17 @@ un-normalized, so a naive `GROUP BY merchant_name` splits Delta and under-report
 
 ## The golden set
 
-12 questions. Four target the planted patterns; the rest cover totals, group-bys,
-refunds, bills, and the user directory. REQUIRED correctness is a structured-value
-check against the oracle; ADDITIONAL mixes deterministic checks with the
-faithfulness judge.
+18 questions in two groups. The first twelve: four target the planted patterns,
+the rest cover totals, group-bys, refunds, bills, and the user directory. The
+last six (q13-q18) test judgment rather than SQL, because the first twelve are
+near-saturated: a 2026 frontier agent scores 100% on their REQUIRED tier, so
+they no longer rank anything. Each of the six is built so a competent model
+reaches a defensible WRONG answer by doing the obvious thing: reporting a mean
+on an 18x-skewed distribution, naming one of two tied answers, counting unpaid
+commitments as cash out, or answering a question the data cannot support.
+
+REQUIRED correctness is a structured-value check against the oracle; ADDITIONAL
+mixes deterministic checks with the faithfulness judge.
 
 | # | Question | Expected | Structured `req.value` · notable ADDITIONAL |
 |---|---|---|---|
@@ -476,7 +489,7 @@ src/
     scripted.ts           offline test double
     agent.ts / system-prompt.ts   the read-only, self-correcting loop
   eval/
-    golden.ts             the 12 questions + tier criteria
+    golden.ts             the 18 questions + tier criteria
     structured.ts         structured-answer matching vs the oracle
     checkers.ts           deterministic checkers
     trajectory.ts         reasoning-path + efficiency discriminators

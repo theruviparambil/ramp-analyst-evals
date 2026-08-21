@@ -4,7 +4,7 @@
  * env resolution, and that an OpenAI agent + Bedrock judge reads as cross-family.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createJudgeClient, createProviderClient, judgeSharesFamilyWithAgent, resolveAgentModel, resolveJudgeModel, toBedrockRequest, type BedrockRequestBody, modelFamily } from "./provider.js";
+import { createJudgeClient, createProviderClient, judgeSharesFamilyWithAgent, resolveAgentModel, resolveJudgeModel, toBedrockRequest, type BedrockRequestBody, modelFamily, differentFromAgentForTest } from "./provider.js";
 import type { Message, ToolSpec } from "./types.js";
 
 const ENV_KEYS = [
@@ -254,5 +254,22 @@ describe("modelFamily", () => {
   it("reports unknown rather than guessing", () => {
     expect(modelFamily("some-internal-model-v2")).toBe("unknown");
     expect(modelFamily("")).toBe("unknown");
+  });
+});
+
+describe("judge fallback", () => {
+  it("never hands back the agent's own model as the judge", () => {
+    // A "different" judge that is the same model is not a mitigation, it is
+    // self-grading with extra steps.
+    for (const m of ["gpt-5.6-luna", "claude-haiku-4-5"]) {
+      expect(differentFromAgentForTest(m)).not.toBe(m);
+    }
+  });
+
+  it("picks a current-generation model for each family", () => {
+    // The previous fallbacks (gpt-4.1, claude-3-5-haiku-latest) were a
+    // generation behind, so an unconfigured judge failed every call.
+    expect(modelFamily(differentFromAgentForTest("gpt-5.6-terra"))).toBe("openai");
+    expect(modelFamily(differentFromAgentForTest("claude-sonnet-5"))).toBe("anthropic");
   });
 });

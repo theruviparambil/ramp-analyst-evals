@@ -95,12 +95,49 @@ export function resolveAgentModel(): Resolved | null {
   return null;
 }
 
-/** A model deliberately different from the agent's, to blunt (not remove) self-preference. */
+/**
+ * A model deliberately different from the agent's, to blunt (not remove)
+ * self-preference when no separate judge is configured.
+ *
+ * These ids are PINNED and therefore go stale. They already did once: the
+ * fallbacks were gpt-4.1 and claude-3-5-haiku-latest, a generation behind, so
+ * an unconfigured judge would have failed every call against a model that no
+ * longer exists, and the run would have reported the additional tier as
+ * unevaluated rather than as broken.
+ *
+ * Staleness here cannot be prevented, only made visible, so resolveJudgeModel
+ * warns whenever this fallback is what picked the judge. The supported path is
+ * an explicit JUDGE_MODEL, and a cross-FAMILY judge via JUDGE_TRANSPORT.
+ */
+const JUDGE_FALLBACKS: ReadonlyArray<readonly [RegExp, readonly string[]]> = [
+  [/gpt-|\bo[134]\b|codex/i, ["gpt-5.6-luna", "gpt-5.6-terra"]],
+  [/claude/i, ["claude-haiku-4-5", "claude-sonnet-5"]],
+];
+
+/**
+ * Two candidates per family, because one is not enough: when the agent already
+ * IS the fallback, a single-candidate table falls through and returns the
+ * agent's own model, which is self-grading with extra steps rather than a
+ * different judge. A test pins that case.
+ */
 function differentFromAgent(agentModel: string): string {
-  if (/gpt-5/i.test(agentModel)) return "gpt-4.1";
-  if (/gpt-4/i.test(agentModel)) return "gpt-4.1-mini";
-  if (/claude/i.test(agentModel)) return "claude-3-5-haiku-latest";
+  const same = (a: string) => a.toLowerCase() === agentModel.toLowerCase();
+  for (const [re, candidates] of JUDGE_FALLBACKS) {
+    if (!re.test(agentModel)) continue;
+    const pick = candidates.find((c) => !same(c));
+    if (pick) return pick;
+  }
   return agentModel;
+}
+
+/** Test seam for the pinned fallback table. Not part of the runtime path. */
+export const differentFromAgentForTest = differentFromAgent;
+
+/** True when the judge model came from the pinned fallback rather than config. */
+export function judgeModelIsFallback(): boolean {
+  if (env("JUDGE_MODEL") || env("JUDGE_TRANSPORT") || env("JUDGE_API_KEY")) return false;
+  const agent = resolveAgentModel();
+  return agent !== null && differentFromAgent(agent.model) !== agent.model;
 }
 
 /**

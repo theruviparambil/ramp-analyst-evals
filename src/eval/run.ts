@@ -22,7 +22,7 @@ import { harnessProvenance } from "./provenance.js";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { runAgent } from "../agent/agent.js";
-import { createJudgeClient, createProviderClient, judgeSharesFamilyWithAgent, modelFamily, resolveAgentModel, resolveJudgeModel, resolveTimeoutMs, type ProviderClient } from "../agent/provider.js";
+import { createJudgeClient, createProviderClient, judgeModelIsFallback, judgeSharesFamilyWithAgent, modelFamily, resolveAgentModel, resolveJudgeModel, resolveTimeoutMs, type ProviderClient } from "../agent/provider.js";
 import { selectBackend } from "../ramp/backend.js";
 import { GOLDEN } from "./golden.js";
 import { agentPrompt, type GoldenQuestion } from "./spec.js";
@@ -184,6 +184,10 @@ async function main(): Promise<void> {
     if (shared) console.log(`         (set JUDGE_TRANSPORT=bedrock + AWS_BEARER_TOKEN_BEDROCK for a cross-family Claude judge)`);
   } else {
     console.log(`  judge: disabled`);
+  }
+  if (judge && judgeModelIsFallback()) {
+    console.log(`         WARNING: judge model came from a pinned fallback, not config. Set JUDGE_MODEL`);
+    console.log(`         (and JUDGE_TRANSPORT for a cross-family judge) to choose it deliberately.`);
   }
   console.log("");
 
