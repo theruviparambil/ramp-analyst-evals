@@ -141,12 +141,59 @@ export function resolveJudgeModel(): Resolved | null {
   return { ...agent, model: judgeModel ?? differentFromAgent(agent.model), label: "judge" };
 }
 
-/** Whether the judge shares the agent's provider family (self-preference risk). */
+/**
+ * Which lab TRAINED the model, which is not the same as who hosts it.
+ *
+ * Self-preference is a property of the model, not the endpoint. Bedrock serves
+ * both Anthropic and OpenAI models, so a Claude judge grading a GPT agent is a
+ * genuine cross-family pairing even when both calls go to the same host, same
+ * region and same credential. Deciding this from the transport (as this module
+ * used to) would stamp `judgeSharesFamily: true` on exactly that setup and
+ * publish a self-preference warning that is not true.
+ *
+ * Vendor prefixes are matched first because Bedrock ids carry them explicitly
+ * (`us.anthropic.claude-...`, `us.openai.gpt-5.6-sol`); bare model names are a
+ * fallback for direct first-party APIs.
+ */
+export type ModelFamily = "openai" | "anthropic" | "meta" | "mistral" | "cohere" | "amazon" | "deepseek" | "unknown";
+
+export function modelFamily(model: string): ModelFamily {
+  const m = model.toLowerCase();
+  const vendor: Array<[RegExp, ModelFamily]> = [
+    [/\bopenai\b/, "openai"],
+    [/\banthropic\b/, "anthropic"],
+    [/\bmeta\b/, "meta"],
+    [/\bmistral\b/, "mistral"],
+    [/\bcohere\b/, "cohere"],
+    [/\bdeepseek\b/, "deepseek"],
+    [/\bamazon\b|\bnova\b|\btitan\b/, "amazon"],
+  ];
+  for (const [re, fam] of vendor) if (re.test(m)) return fam;
+  const name: Array<[RegExp, ModelFamily]> = [
+    [/\bgpt-|\bo[134]\b|\bcodex\b/, "openai"],
+    [/\bclaude\b/, "anthropic"],
+    [/\bllama\b/, "meta"],
+  ];
+  for (const [re, fam] of name) if (re.test(m)) return fam;
+  return "unknown";
+}
+
+/**
+ * Whether the judge shares the agent's model family (self-preference risk).
+ *
+ * An unrecognized model on either side means independence cannot be VERIFIED,
+ * so it is reported as shared. Over-warning is the safe direction: the cost is
+ * a caveat on a run that did not need one, versus publishing an unearned claim
+ * of judge independence.
+ */
 export function judgeSharesFamilyWithAgent(): boolean {
   const a = resolveAgentModel();
   const j = resolveJudgeModel();
   if (!a || !j) return false;
-  return a.transport === j.transport && a.baseUrl === j.baseUrl;
+  const fa = modelFamily(a.model);
+  const fj = modelFamily(j.model);
+  if (fa === "unknown" || fj === "unknown") return true;
+  return fa === fj;
 }
 
 export interface ProviderOptions {

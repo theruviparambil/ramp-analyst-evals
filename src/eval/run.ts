@@ -22,7 +22,7 @@ import { harnessProvenance } from "./provenance.js";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { runAgent } from "../agent/agent.js";
-import { createJudgeClient, createProviderClient, judgeSharesFamilyWithAgent, resolveAgentModel, resolveTimeoutMs, type ProviderClient } from "../agent/provider.js";
+import { createJudgeClient, createProviderClient, judgeSharesFamilyWithAgent, modelFamily, resolveAgentModel, resolveJudgeModel, resolveTimeoutMs, type ProviderClient } from "../agent/provider.js";
 import { selectBackend } from "../ramp/backend.js";
 import { GOLDEN } from "./golden.js";
 import { agentPrompt, type GoldenQuestion } from "./spec.js";
@@ -255,6 +255,11 @@ async function main(): Promise<void> {
   await guardExistingReceipt(args, agent.label, questions.length);
   const meta = {
     startedAt: new Date().toISOString(), model: agent.label, judge: judge?.label ?? null, judgeSharesFamily: judge ? judgeSharesFamilyWithAgent() : null,
+    // The families the flag above was derived from, so a reader can audit it
+    // instead of trusting it. Same host does not imply same family: Bedrock
+    // serves both Anthropic and OpenAI models.
+    agentFamily: modelFamily(resolveAgentModel()?.model ?? ""),
+    judgeFamily: judge ? modelFamily(resolveJudgeModel()?.model ?? "") : null,
     // Two runs are comparable only if harness.gradingHash matches. See provenance.ts.
     harness: harnessProvenance(),
     tag: args.tag, requiredBar: args.requiredBar, samples: args.samples, questions: questions.length,

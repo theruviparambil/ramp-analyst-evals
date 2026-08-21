@@ -4,7 +4,7 @@
  * env resolution, and that an OpenAI agent + Bedrock judge reads as cross-family.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createJudgeClient, createProviderClient, judgeSharesFamilyWithAgent, resolveAgentModel, resolveJudgeModel, toBedrockRequest, type BedrockRequestBody } from "./provider.js";
+import { createJudgeClient, createProviderClient, judgeSharesFamilyWithAgent, resolveAgentModel, resolveJudgeModel, toBedrockRequest, type BedrockRequestBody, modelFamily } from "./provider.js";
 import type { Message, ToolSpec } from "./types.js";
 
 const ENV_KEYS = [
@@ -219,5 +219,40 @@ describe("Bedrock agent: tool-use round trip (mocked fetch)", () => {
     expect(agent.usage.calls).toBe(2);
     expect(agent.usage.promptTokens).toBe(250);
     expect(agent.usage.completionTokens).toBe(30);
+  });
+});
+
+/**
+ * Self-preference is a property of the MODEL, not the endpoint. Bedrock serves
+ * both Anthropic and OpenAI models, so deciding family from the transport
+ * stamped a false `judgeSharesFamily: true` on exactly the configuration this
+ * repo recommends: a Claude judge grading a GPT agent, both on Bedrock.
+ */
+describe("modelFamily", () => {
+  it("reads the vendor prefix out of Bedrock inference-profile ids", () => {
+    expect(modelFamily("us.anthropic.claude-sonnet-4-6")).toBe("anthropic");
+    expect(modelFamily("us.openai.gpt-5.6-sol")).toBe("openai");
+    expect(modelFamily("global.openai.gpt-5.6-sol")).toBe("openai");
+    expect(modelFamily("openai.gpt-5.6-sol")).toBe("openai");
+    expect(modelFamily("us.meta.llama3-3-70b-instruct-v1:0")).toBe("meta");
+  });
+
+  it("falls back to the bare model name for first-party APIs", () => {
+    expect(modelFamily("gpt-5.1")).toBe("openai");
+    expect(modelFamily("openai/gpt-5.1")).toBe("openai");
+    expect(modelFamily("claude-sonnet-4-6")).toBe("anthropic");
+    expect(modelFamily("anthropic/claude-sonnet-4-6")).toBe("anthropic");
+    expect(modelFamily("codex-mini")).toBe("openai");
+  });
+
+  it("separates Anthropic from OpenAI even when both are Bedrock-hosted", () => {
+    // The exact pairing the repo recommends. Same host, same region, same key,
+    // genuinely different families.
+    expect(modelFamily("us.openai.gpt-5.6-sol")).not.toBe(modelFamily("us.anthropic.claude-sonnet-4-6"));
+  });
+
+  it("reports unknown rather than guessing", () => {
+    expect(modelFamily("some-internal-model-v2")).toBe("unknown");
+    expect(modelFamily("")).toBe("unknown");
   });
 });
