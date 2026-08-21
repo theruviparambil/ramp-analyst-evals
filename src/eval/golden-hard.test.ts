@@ -225,3 +225,38 @@ describe("the harder six are answerable through the guarded surface", () => {
     expect(GT.inactiveUserCount).toBeGreaterThan(0);
   });
 });
+
+/**
+ * q17 grounding: reading the schema IS looking.
+ *
+ * The first calibration run marked gpt-5.6-terra wrong here. It called
+ * get_analyst_catalog, saw no budget table, and declined, which is correct and
+ * cheaper than proving a column's absence with a query. Requiring
+ * execute_analyst_query measured a harness assumption about HOW to look.
+ */
+describe("q17 accepts schema inspection as grounding", () => {
+  const q17 = GOLDEN.find((q) => q.id === "q17_unanswerable_budget")!;
+  const grounded = q17.criteria.find((c) => c.id === "req.grounded")!;
+  const step = (name: string, ok = true) => ({ index: 0, name, kind: "read" as const, rationale: "r", args: {}, ok, resultSummary: {}, isError: !ok });
+  const ctxWith = (names: string[]) => ({
+    question: q17.question,
+    finalAnswer: "{}",
+    trajectory: { steps: names.map((n) => step(n)), hitStepCap: false } as never,
+  });
+
+  it("passes on the catalog alone, with no query", () => {
+    expect(grounded.run!(ctxWith(["get_analyst_catalog"])).pass).toBe(true);
+  });
+
+  it("passes on domain docs alone", () => {
+    expect(grounded.run!(ctxWith(["get_analyst_spend_facts_domain_docs"])).pass).toBe(true);
+  });
+
+  it("still passes when the agent did run a query", () => {
+    expect(grounded.run!(ctxWith(["get_analyst_catalog", "execute_analyst_query"])).pass).toBe(true);
+  });
+
+  it("still fails an agent that answered without looking at anything", () => {
+    expect(grounded.run!(ctxWith([])).pass).toBe(false);
+  });
+});

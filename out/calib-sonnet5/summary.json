@@ -1,0 +1,477 @@
+{
+  "startedAt": "2026-08-21T17:58:21.333Z",
+  "model": "anthropic:claude-sonnet-5",
+  "judge": "judge:gpt-5.6-terra",
+  "judgeSharesFamily": false,
+  "agentFamily": "anthropic",
+  "judgeFamily": "openai",
+  "harness": {
+    "commit": "72b3796",
+    "dirty": true,
+    "gradingHash": "82d03c17c94ae34b",
+    "gradingFiles": 9
+  },
+  "tag": "calib-sonnet5",
+  "requiredBar": 0.9,
+  "samples": 1,
+  "questions": 18,
+  "infraErrorsExcluded": 0,
+  "agentTimeoutMs": 240000,
+  "requiredTier": {
+    "mean": 0.9444444444444444,
+    "min": 0.9444444444444444,
+    "max": 0.9444444444444444,
+    "perSample": [
+      0.9444444444444444
+    ]
+  },
+  "additionalTier": {
+    "mean": 0.5,
+    "min": 0.5,
+    "max": 0.5,
+    "perSample": [
+      0.5
+    ]
+  },
+  "perQuestion": [
+    {
+      "id": "q01_total_net_spend",
+      "samples": 1,
+      "errored": 0,
+      "requiredPass": 1,
+      "additionalPass": 1
+    },
+    {
+      "id": "q02_top_vendor",
+      "samples": 1,
+      "errored": 0,
+      "requiredPass": 1,
+      "additionalPass": 0
+    },
+    {
+      "id": "q03_spend_by_department",
+      "samples": 1,
+      "errored": 0,
+      "requiredPass": 1,
+      "additionalPass": 1
+    },
+    {
+      "id": "q04_duplicate_charge",
+      "samples": 1,
+      "errored": 0,
+      "requiredPass": 1,
+      "additionalPass": 0
+    },
+    {
+      "id": "q05_vendor_variant",
+      "samples": 1,
+      "errored": 0,
+      "requiredPass": 1,
+      "additionalPass": 1
+    },
+    {
+      "id": "q06_out_of_policy",
+      "samples": 1,
+      "errored": 0,
+      "requiredPass": 1,
+      "additionalPass": 0
+    },
+    {
+      "id": "q07_mom_spike",
+      "samples": 1,
+      "errored": 0,
+      "requiredPass": 1,
+      "additionalPass": 0
+    },
+    {
+      "id": "q08_top_spender",
+      "samples": 1,
+      "errored": 0,
+      "requiredPass": 1,
+      "additionalPass": 1
+    },
+    {
+      "id": "q09_software_total",
+      "samples": 1,
+      "errored": 0,
+      "requiredPass": 1,
+      "additionalPass": 0
+    },
+    {
+      "id": "q10_refunds",
+      "samples": 1,
+      "errored": 0,
+      "requiredPass": 1,
+      "additionalPass": 1
+    },
+    {
+      "id": "q11_open_bills",
+      "samples": 1,
+      "errored": 0,
+      "requiredPass": 1,
+      "additionalPass": 1
+    },
+    {
+      "id": "q12_active_users",
+      "samples": 1,
+      "errored": 0,
+      "requiredPass": 1,
+      "additionalPass": 1
+    },
+    {
+      "id": "q13_typical_purchase",
+      "samples": 1,
+      "errored": 0,
+      "requiredPass": 1,
+      "additionalPass": 0
+    },
+    {
+      "id": "q14_refund_scope",
+      "samples": 1,
+      "errored": 0,
+      "requiredPass": 1,
+      "additionalPass": 1
+    },
+    {
+      "id": "q15_program_reach",
+      "samples": 1,
+      "errored": 0,
+      "requiredPass": 1,
+      "additionalPass": 0
+    },
+    {
+      "id": "q16_q2_cash_out",
+      "samples": 1,
+      "errored": 0,
+      "requiredPass": 1,
+      "additionalPass": 1
+    },
+    {
+      "id": "q17_unanswerable_budget",
+      "samples": 1,
+      "errored": 0,
+      "requiredPass": 0,
+      "additionalPass": 0
+    },
+    {
+      "id": "q18_inactive_spenders",
+      "samples": 1,
+      "errored": 0,
+      "requiredPass": 1,
+      "additionalPass": 0
+    }
+  ],
+  "usage": {
+    "agent": {
+      "promptTokens": 461602,
+      "completionTokens": 22023,
+      "calls": 74,
+      "estCostUsd": 1.143434
+    },
+    "judge": {
+      "promptTokens": 10802,
+      "completionTokens": 792,
+      "calls": 18,
+      "estCostUsd": 0.031108
+    },
+    "totalCostUsd": 1.174542
+  },
+  "criterionPassRates": [
+    {
+      "id": "req.read_only",
+      "tier": "required",
+      "nature": "invariant",
+      "evaluated": 18,
+      "passed": 18,
+      "rate": 1
+    },
+    {
+      "id": "req.rationale",
+      "tier": "required",
+      "nature": "invariant",
+      "evaluated": 18,
+      "passed": 18,
+      "rate": 1
+    },
+    {
+      "id": "req.grounded",
+      "tier": "required",
+      "nature": "observed",
+      "evaluated": 18,
+      "passed": 17,
+      "rate": 0.9444444444444444
+    },
+    {
+      "id": "req.value",
+      "tier": "required",
+      "nature": "observed",
+      "evaluated": 18,
+      "passed": 18,
+      "rate": 1
+    },
+    {
+      "id": "add.money_format",
+      "tier": "additional",
+      "nature": "observed",
+      "evaluated": 18,
+      "passed": 9,
+      "rate": 0.5
+    },
+    {
+      "id": "add.cited_method",
+      "tier": "additional",
+      "nature": "observed",
+      "evaluated": 17,
+      "passed": 12,
+      "rate": 0.7058823529411765
+    },
+    {
+      "id": "add.converged",
+      "tier": "additional",
+      "nature": "observed",
+      "evaluated": 18,
+      "passed": 18,
+      "rate": 1
+    },
+    {
+      "id": "add.no_refetch",
+      "tier": "additional",
+      "nature": "observed",
+      "evaluated": 18,
+      "passed": 18,
+      "rate": 1
+    },
+    {
+      "id": "add.aggregated_in_sql",
+      "tier": "additional",
+      "nature": "observed",
+      "evaluated": 17,
+      "passed": 16,
+      "rate": 0.9411764705882353
+    },
+    {
+      "id": "path.catalog_before_query",
+      "tier": "additional",
+      "nature": "observed",
+      "evaluated": 17,
+      "passed": 16,
+      "rate": 0.9411764705882353
+    },
+    {
+      "id": "path.docs_before_query",
+      "tier": "additional",
+      "nature": "observed",
+      "evaluated": 17,
+      "passed": 16,
+      "rate": 0.9411764705882353
+    },
+    {
+      "id": "path.attempts",
+      "tier": "additional",
+      "nature": "observed",
+      "evaluated": 17,
+      "passed": 17,
+      "rate": 1
+    },
+    {
+      "id": "add.faithful",
+      "tier": "additional",
+      "nature": "observed",
+      "evaluated": 18,
+      "passed": 18,
+      "rate": 1
+    },
+    {
+      "id": "add.full_vector",
+      "tier": "additional",
+      "nature": "observed",
+      "evaluated": 1,
+      "passed": 1,
+      "rate": 1
+    },
+    {
+      "id": "add.dates",
+      "tier": "additional",
+      "nature": "observed",
+      "evaluated": 1,
+      "passed": 1,
+      "rate": 1
+    },
+    {
+      "id": "add.variants",
+      "tier": "additional",
+      "nature": "observed",
+      "evaluated": 1,
+      "passed": 1,
+      "rate": 1
+    },
+    {
+      "id": "add.recall",
+      "tier": "additional",
+      "nature": "observed",
+      "evaluated": 1,
+      "passed": 1,
+      "rate": 1
+    },
+    {
+      "id": "add.policy_cited",
+      "tier": "additional",
+      "nature": "observed",
+      "evaluated": 1,
+      "passed": 1,
+      "rate": 1
+    },
+    {
+      "id": "req.category",
+      "tier": "required",
+      "nature": "observed",
+      "evaluated": 1,
+      "passed": 1,
+      "rate": 1
+    },
+    {
+      "id": "add.increase",
+      "tier": "additional",
+      "nature": "observed",
+      "evaluated": 1,
+      "passed": 1,
+      "rate": 1
+    },
+    {
+      "id": "add.driver",
+      "tier": "additional",
+      "nature": "observed",
+      "evaluated": 1,
+      "passed": 1,
+      "rate": 1
+    },
+    {
+      "id": "add.top_vendors",
+      "tier": "additional",
+      "nature": "observed",
+      "evaluated": 1,
+      "passed": 1,
+      "rate": 1
+    },
+    {
+      "id": "req.refunds",
+      "tier": "required",
+      "nature": "observed",
+      "evaluated": 1,
+      "passed": 1,
+      "rate": 1
+    },
+    {
+      "id": "add.gross",
+      "tier": "additional",
+      "nature": "observed",
+      "evaluated": 1,
+      "passed": 1,
+      "rate": 1
+    },
+    {
+      "id": "add.refund_total",
+      "tier": "additional",
+      "nature": "observed",
+      "evaluated": 1,
+      "passed": 1,
+      "rate": 1
+    },
+    {
+      "id": "add.count",
+      "tier": "additional",
+      "nature": "observed",
+      "evaluated": 2,
+      "passed": 2,
+      "rate": 1
+    },
+    {
+      "id": "add.separates",
+      "tier": "additional",
+      "nature": "observed",
+      "evaluated": 1,
+      "passed": 1,
+      "rate": 1
+    },
+    {
+      "id": "add.avg_value",
+      "tier": "additional",
+      "nature": "observed",
+      "evaluated": 1,
+      "passed": 1,
+      "rate": 1
+    },
+    {
+      "id": "req.headline",
+      "tier": "required",
+      "nature": "observed",
+      "evaluated": 1,
+      "passed": 1,
+      "rate": 1
+    },
+    {
+      "id": "add.mean",
+      "tier": "additional",
+      "nature": "observed",
+      "evaluated": 1,
+      "passed": 1,
+      "rate": 1
+    },
+    {
+      "id": "req.q2_value",
+      "tier": "required",
+      "nature": "observed",
+      "evaluated": 1,
+      "passed": 1,
+      "rate": 1
+    },
+    {
+      "id": "add.all_count",
+      "tier": "additional",
+      "nature": "observed",
+      "evaluated": 1,
+      "passed": 1,
+      "rate": 1
+    },
+    {
+      "id": "add.q2_count",
+      "tier": "additional",
+      "nature": "observed",
+      "evaluated": 1,
+      "passed": 1,
+      "rate": 1
+    },
+    {
+      "id": "req.count",
+      "tier": "required",
+      "nature": "observed",
+      "evaluated": 1,
+      "passed": 1,
+      "rate": 1
+    },
+    {
+      "id": "add.bills",
+      "tier": "additional",
+      "nature": "observed",
+      "evaluated": 1,
+      "passed": 1,
+      "rate": 1
+    },
+    {
+      "id": "add.card",
+      "tier": "additional",
+      "nature": "observed",
+      "evaluated": 1,
+      "passed": 1,
+      "rate": 1
+    },
+    {
+      "id": "req.no_fabrication",
+      "tier": "required",
+      "nature": "observed",
+      "evaluated": 1,
+      "passed": 1,
+      "rate": 1
+    }
+  ]
+}

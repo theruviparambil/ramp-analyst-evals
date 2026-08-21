@@ -1,0 +1,173 @@
+{
+  "startedAt": "2026-08-21T17:50:54.736Z",
+  "model": "openai:gpt-5.6-terra",
+  "judge": "judge:claude-sonnet-5",
+  "judgeSharesFamily": false,
+  "agentFamily": "openai",
+  "judgeFamily": "anthropic",
+  "harness": {
+    "commit": "72b3796",
+    "dirty": true,
+    "gradingHash": "8196339295336354",
+    "gradingFiles": 9
+  },
+  "tag": "smoke2",
+  "requiredBar": 0.9,
+  "samples": 1,
+  "questions": 2,
+  "infraErrorsExcluded": 0,
+  "agentTimeoutMs": 240000,
+  "requiredTier": {
+    "mean": 1,
+    "min": 1,
+    "max": 1,
+    "perSample": [
+      1
+    ]
+  },
+  "additionalTier": {
+    "mean": 0.5,
+    "min": 0.5,
+    "max": 0.5,
+    "perSample": [
+      0.5
+    ]
+  },
+  "perQuestion": [
+    {
+      "id": "q01_total_net_spend",
+      "samples": 1,
+      "errored": 0,
+      "requiredPass": 1,
+      "additionalPass": 1
+    },
+    {
+      "id": "q02_top_vendor",
+      "samples": 1,
+      "errored": 0,
+      "requiredPass": 1,
+      "additionalPass": 0
+    }
+  ],
+  "usage": {
+    "agent": {
+      "promptTokens": 26300,
+      "completionTokens": 1015,
+      "calls": 9,
+      "estCostUsd": 0.06478
+    },
+    "judge": {
+      "promptTokens": 1497,
+      "completionTokens": 151,
+      "calls": 2,
+      "estCostUsd": 0.004504
+    },
+    "totalCostUsd": 0.069284
+  },
+  "criterionPassRates": [
+    {
+      "id": "req.read_only",
+      "tier": "required",
+      "nature": "invariant",
+      "evaluated": 2,
+      "passed": 2,
+      "rate": 1
+    },
+    {
+      "id": "req.rationale",
+      "tier": "required",
+      "nature": "invariant",
+      "evaluated": 2,
+      "passed": 2,
+      "rate": 1
+    },
+    {
+      "id": "req.grounded",
+      "tier": "required",
+      "nature": "observed",
+      "evaluated": 2,
+      "passed": 2,
+      "rate": 1
+    },
+    {
+      "id": "req.value",
+      "tier": "required",
+      "nature": "observed",
+      "evaluated": 2,
+      "passed": 2,
+      "rate": 1
+    },
+    {
+      "id": "add.money_format",
+      "tier": "additional",
+      "nature": "observed",
+      "evaluated": 2,
+      "passed": 2,
+      "rate": 1
+    },
+    {
+      "id": "add.cited_method",
+      "tier": "additional",
+      "nature": "observed",
+      "evaluated": 2,
+      "passed": 1,
+      "rate": 0.5
+    },
+    {
+      "id": "add.converged",
+      "tier": "additional",
+      "nature": "observed",
+      "evaluated": 2,
+      "passed": 2,
+      "rate": 1
+    },
+    {
+      "id": "add.no_refetch",
+      "tier": "additional",
+      "nature": "observed",
+      "evaluated": 2,
+      "passed": 2,
+      "rate": 1
+    },
+    {
+      "id": "add.aggregated_in_sql",
+      "tier": "additional",
+      "nature": "observed",
+      "evaluated": 2,
+      "passed": 2,
+      "rate": 1
+    },
+    {
+      "id": "path.catalog_before_query",
+      "tier": "additional",
+      "nature": "observed",
+      "evaluated": 2,
+      "passed": 2,
+      "rate": 1
+    },
+    {
+      "id": "path.docs_before_query",
+      "tier": "additional",
+      "nature": "observed",
+      "evaluated": 2,
+      "passed": 2,
+      "rate": 1
+    },
+    {
+      "id": "path.attempts",
+      "tier": "additional",
+      "nature": "observed",
+      "evaluated": 2,
+      "passed": 2,
+      "rate": 1
+    },
+    {
+      "id": "add.faithful",
+      "tier": "additional",
+      "nature": "observed",
+      "evaluated": 2,
+      "passed": 2,
+      "rate": 1
+    }
+  ]
+}

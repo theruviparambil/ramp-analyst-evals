@@ -77,6 +77,24 @@ export function groundedIn(ctx: CheckContext, toolName: string): CheckOutcome {
     : { pass: false, detail: `no successful ${toolName} call` };
 }
 
+/**
+ * Grounded in ANY of several tools, for questions where the right evidence is
+ * not a query.
+ *
+ * q17 asks which department went over budget, and no budget column exists
+ * anywhere in the schema. Requiring `execute_analyst_query` there marked
+ * gpt-5.6-terra WRONG for reading the catalog, seeing no budget table, and
+ * declining, which is both correct and cheaper than proving a column's absence
+ * by querying for it. The criterion was measuring a harness assumption about
+ * HOW an agent should look rather than whether it looked at all.
+ */
+export function groundedInAny(ctx: CheckContext, toolNames: string[]): CheckOutcome {
+  const used = toolNames.filter((n) => ctx.trajectory.steps.some((s) => s.name === n && s.ok));
+  return used.length > 0
+    ? { pass: true, detail: `used ${used.join(", ")}` }
+    : { pass: false, detail: `no successful call to any of: ${toolNames.join(", ")}` };
+}
+
 /** Every tool call carried a non-empty rationale (a Ramp requirement). */
 export function everyCallHasRationale(ctx: CheckContext): CheckOutcome {
   const missing = ctx.trajectory.steps.filter((s) => !s.rationale || s.rationale.trim().length === 0);
