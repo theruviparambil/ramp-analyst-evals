@@ -10,3 +10,5 @@ coverage/
 # (out/summary.json, out/transcripts.md, out/results.jsonl) from a real run.
 # Only the verbose run log is ignored.
 out/live-run.log
+# `npm run demo` is a 6-question sample run, not a receipt worth publishing.
+out/demo/

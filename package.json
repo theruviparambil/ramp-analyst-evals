@@ -14,7 +14,7 @@
   },
   "scripts": {
     "eval": "tsx src/eval/run.ts",
-    "demo": "tsx src/eval/run.ts --limit=6 --tag=demo",
+    "demo": "tsx src/eval/run.ts --limit=6 --tag=demo --out=out/demo",
     "ask": "tsx src/ask.ts",
     "ground-truth": "tsx src/fixture/print-ground-truth.ts",
     "check-types": "tsc --noEmit",

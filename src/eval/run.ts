@@ -17,8 +17,10 @@
  * moves the gated number.
  */
 
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { harnessProvenance } from "./provenance.js";
 import { resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { runAgent } from "../agent/agent.js";
 import { createJudgeClient, createProviderClient, judgeSharesFamilyWithAgent, resolveAgentModel, resolveTimeoutMs, type ProviderClient } from "../agent/provider.js";
 import { selectBackend } from "../ramp/backend.js";
@@ -32,6 +34,7 @@ import type { LLMClient } from "../agent/types.js";
 interface Args {
   limit: number;
   outDir: string;
+  force: boolean;
   tag: string;
   requiredBar: number;
   noJudge: boolean;
@@ -44,6 +47,7 @@ function parseArgs(argv: string[]): Args {
   return {
     limit: get("limit") ? Number.parseInt(get("limit")!, 10) : GOLDEN.length,
     outDir: get("out") ?? "out",
+    force: argv.includes("--force"),
     tag: get("tag") ?? "eval",
     requiredBar: process.env.EVAL_REQUIRED_BAR ? Number.parseFloat(process.env.EVAL_REQUIRED_BAR) : 0.9,
     noJudge: has("no-judge"),
@@ -88,6 +92,74 @@ async function runSample(agent: LLMClient, judge: LLMClient | undefined, questio
 }
 
 const pct = (x: number | null) => (x === null ? "n/a" : `${(x * 100).toFixed(0)}%`);
+
+/**
+ * Refuse to silently overwrite someone else's receipt.
+ *
+ * The default outDir is `out`, and `out/` holds a COMMITTED result set. Before
+ * this guard, `npm run demo` (6 questions, tag=demo) wrote straight over the
+ * published 12-question run: a clone-and-try would show the repo's headline
+ * numbers replaced by a partial demo, in the working tree, with no warning.
+ *
+ * Re-running the SAME configuration still overwrites, which is the normal case.
+ * Only a differing model, tag, or question count is treated as a collision.
+ */
+/**
+ * Write the run artifacts. Extracted and exported because this runs AFTER every
+ * API call has been paid for: a throw here discards the whole run, and it was
+ * previously the only part of the pipeline with no test at all.
+ *
+ * results.jsonl carries EVERY sample, stamped with a 1-based `sample` index, so
+ * per-question variance stays auditable. transcripts.md is the last sample only,
+ * which the console line states rather than leaving the reader to assume.
+ */
+export async function writeArtifacts(
+  outDir: string,
+  meta: unknown,
+  samples: Array<{ scores: QuestionScore[] }>,
+  transcripts: string[],
+): Promise<void> {
+  await mkdir(outDir, { recursive: true });
+  const stamped = samples.flatMap((smp, i) => smp.scores.map((sc) => ({ sample: i + 1, ...sc })));
+  await writeFile(resolve(outDir, "results.jsonl"), stamped.map((r) => JSON.stringify(r)).join("\n") + "\n", "utf8");
+  await writeFile(resolve(outDir, "summary.json"), JSON.stringify(meta, null, 2), "utf8");
+  await writeFile(resolve(outDir, "transcripts.md"), transcripts.join("\n---\n\n"), "utf8");
+}
+
+export interface PriorReceipt {
+  model?: unknown;
+  tag?: unknown;
+  questions?: unknown;
+}
+
+/**
+ * How an incoming run differs from the receipt already sitting in outDir.
+ * Empty means "same configuration", which is a normal re-run and may overwrite.
+ * Fields absent from the prior file are not treated as differences: an older
+ * receipt predating a field should not block a legitimate re-run.
+ */
+export function receiptCollision(prior: PriorReceipt, model: string, tag: string, questionCount: number): string[] {
+  return [
+    prior.model !== undefined && prior.model !== model ? `model ${String(prior.model)} -> ${model}` : null,
+    prior.tag !== undefined && prior.tag !== tag ? `tag ${String(prior.tag)} -> ${tag}` : null,
+    prior.questions !== undefined && prior.questions !== questionCount ? `questions ${String(prior.questions)} -> ${questionCount}` : null,
+  ].filter((x): x is string => x !== null);
+}
+
+async function guardExistingReceipt(args: Args, model: string, questionCount: number): Promise<void> {
+  if (args.force) return;
+  let prior: PriorReceipt;
+  try {
+    prior = JSON.parse(await readFile(resolve(args.outDir, "summary.json"), "utf8")) as PriorReceipt;
+  } catch {
+    return; // nothing there, or unreadable: nothing to protect
+  }
+  const differs = receiptCollision(prior, model, args.tag, questionCount);
+  if (differs.length === 0) return;
+  console.error(`Refusing to overwrite ${args.outDir}/summary.json: it holds a different run (${differs.join("; ")}).`);
+  console.error(`Write elsewhere with --out=<dir>, or pass --force to replace it.`);
+  process.exit(2);
+}
 
 async function main(): Promise<void> {
   loadDotenv();
@@ -180,9 +252,12 @@ async function main(): Promise<void> {
   console.log(`  total ≈ ${fmtUsd(totalCost)}`);
 
   await mkdir(args.outDir, { recursive: true });
+  await guardExistingReceipt(args, agent.label, questions.length);
   const meta = {
     startedAt: new Date().toISOString(), model: agent.label, judge: judge?.label ?? null, judgeSharesFamily: judge ? judgeSharesFamilyWithAgent() : null,
-    tag: args.tag, requiredBar: args.requiredBar, samples: args.samples,
+    // Two runs are comparable only if harness.gradingHash matches. See provenance.ts.
+    harness: harnessProvenance(),
+    tag: args.tag, requiredBar: args.requiredBar, samples: args.samples, questions: questions.length,
     infraErrorsExcluded: erroredTotal, agentTimeoutMs: resolveTimeoutMs("AGENT_TIMEOUT_MS", 240_000),
     requiredTier: { mean: meanRequired, min: Math.min(...reqRates), max: Math.max(...reqRates), perSample: reqRates },
     additionalTier: { mean: meanAdditional, min: Math.min(...addRates), max: Math.max(...addRates), perSample: addRates },
@@ -194,10 +269,11 @@ async function main(): Promise<void> {
     },
     criterionPassRates: mergedSummary.criterionPassRates,
   };
-  await writeFile(resolve(args.outDir, "results.jsonl"), last.scores.map((s) => JSON.stringify(s)).join("\n") + "\n", "utf8");
-  await writeFile(resolve(args.outDir, "summary.json"), JSON.stringify(meta, null, 2), "utf8");
-  await writeFile(resolve(args.outDir, "transcripts.md"), last.transcripts.join("\n---\n\n"), "utf8");
-  console.log(`Artifacts written to ${args.outDir}/ (results.jsonl, summary.json, transcripts.md)`);
+  // Every sample, not just the last. A 5-sample run that persists one sample's
+  // per-question detail cannot answer the question you paid five samples to ask:
+  // WHICH questions moved. The `sample` field is 1-based to match the console log.
+  await writeArtifacts(args.outDir, meta, samples, last.transcripts);
+  console.log(`Artifacts written to ${args.outDir}/ (results.jsonl: all ${args.samples} sample(s); summary.json; transcripts.md: sample ${args.samples} only)`);
 
   if (!passesGate({ ...mergedSummary, requiredTierPassRate: meanRequired }, args.requiredBar)) {
     const why =
@@ -210,7 +286,16 @@ async function main(): Promise<void> {
   console.log(`\nEVAL GATE: REQUIRED tier ${pct(meanRequired)} ≥ bar ${pct(args.requiredBar)}. Pass.`);
 }
 
-main().catch((err) => {
-  console.error(`eval: ${(err as Error).message}`);
-  process.exit(1);
-});
+/**
+ * Run main() only when this file IS the entrypoint. Without the guard, importing
+ * anything from this module (a test, another script) launches a full eval run.
+ * argv[1] is compared as a file URL so it matches however tsx resolved the path.
+ */
+const isEntrypoint = process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href;
+
+if (isEntrypoint) {
+  main().catch((err) => {
+    console.error(`eval: ${(err as Error).message}`);
+    process.exit(1);
+  });
+}
