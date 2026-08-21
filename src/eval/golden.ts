@@ -41,6 +41,16 @@ import {
   structTopEntry,
   structVectorUsd,
 } from "./structured.js";
+
+/**
+ * Materiality floor for the duplicate-charge question, in cents.
+ *
+ * Q2 holds one coincidental pair of identical $35.93 Uber charges as well as
+ * the planted $8,400 Datadog double-charge. The Uber pair is real, so the
+ * question states a floor and the grader applies the same floor, rather than
+ * failing an agent for an accurate observation about generated data.
+ */
+export const DUPLICATE_MATERIALITY_CENTS = 100_000;
 import { centsToDisplay } from "../money.js";
 import { det, judged, type Criterion, type GoldenQuestion } from "./spec.js";
 
@@ -117,12 +127,16 @@ export const GOLDEN: GoldenQuestion[] = [
     id: "q04_duplicate_charge",
     question: "Are there any duplicate charges from Q2 we should investigate?",
     expected: `One material duplicate: Datadog ${fmt(GT.duplicatePairs[0]!.amount_cents)} charged on ${GT.duplicatePairs[0]!.dates[0]} and ${GT.duplicatePairs[0]!.dates[1]}, a likely double-charge of the recurring monthly bill (NOT the normal monthly charge).`,
-    answerInstructions: jsonBlock(`{"duplicates": [{"merchant": <string>, "amount_usd": <number>, "dates": ["YYYY-MM-DD", "YYYY-MM-DD"]}]}  // empty array if there are none`),
+    answerInstructions: jsonBlock(`{"duplicates": [{"merchant": <string>, "amount_usd": <number>, "dates": ["YYYY-MM-DD", "YYYY-MM-DD"]}]}  // empty array if there are none. Materiality: only report pairs of $${(DUPLICATE_MATERIALITY_CENTS / 100).toLocaleString("en-US")} or more.`),
     criteria: [
       ...baseRequired("execute_analyst_query"),
-      det("req.value", "required", `Flags the Datadog ${fmt(GT.duplicatePairs[0]!.amount_cents)} duplicate`, (c) => structItemsContain(c, "duplicates", "merchant", "amount_usd", [{ merchant: "Datadog", cents: GT.duplicatePairs[0]!.amount_cents }]), "observed"),
+      // Q2 holds FOUR Datadog charges of exactly $8,400 (04-03, 05-12, 05-15, 06-04).
+      // Merchant plus amount therefore identifies nothing: the required check has to
+      // pin the (05-12, 05-15) pair and reject every other item, or "there are no
+      // duplicates, here are the normal monthly charges" scores as correct.
+      det("req.value", "required", `Reports exactly the Datadog ${fmt(GT.duplicatePairs[0]!.amount_cents)} pair on ${GT.duplicatePairs[0]!.dates.join(" and ")}`, (c) => structItemsExact(c, "duplicates", "merchant", "amount_usd", [{ merchant: "Datadog", cents: GT.duplicatePairs[0]!.amount_cents, dates: [...GT.duplicatePairs[0]!.dates] }], { ignoreBelowCents: DUPLICATE_MATERIALITY_CENTS }), "observed"),
+      // Diagnostic split: found the right pair but also dragged in extras.
       det("add.dates", "additional", "Cites both charge dates", (c) => structItemsContain(c, "duplicates", "merchant", "amount_usd", [{ merchant: "Datadog", cents: GT.duplicatePairs[0]!.amount_cents, dates: [...GT.duplicatePairs[0]!.dates] }]), "observed"),
-      det("add.exact", "additional", "Reports exactly the one real duplicate (no false positives)", (c) => structItemsExact(c, "duplicates", "merchant", "amount_usd", [{ merchant: "Datadog", cents: GT.duplicatePairs[0]!.amount_cents, dates: [...GT.duplicatePairs[0]!.dates] }]), "observed"),
       ...baseAdditional(true),
       judged("add.faithful", "additional", "Flagged the anomaly correctly", "The answer flags the Datadog $8,400.00 charge appearing twice within days as a probable double-charge of the recurring monthly bill, not as normal recurring spend."),
     ],
@@ -147,8 +161,10 @@ export const GOLDEN: GoldenQuestion[] = [
     answerInstructions: jsonBlock(`{"out_of_policy": [{"merchant": <string>, "amount_usd": <number>}]}  // empty array if none`),
     criteria: [
       ...baseRequired("execute_analyst_query"),
-      det("req.value", "required", `Flags the ${GT.outOfPolicy[0]!.merchant_name} ${fmt(GT.outOfPolicy[0]!.amount_cents)} charge`, (c) => structItemsContain(c, "out_of_policy", "merchant", "amount_usd", [{ merchant: GT.outOfPolicy[0]!.merchant_name, cents: GT.outOfPolicy[0]!.amount_cents }]), "observed"),
-      det("add.exact", "additional", "Reports exactly the one out-of-policy charge", (c) => structItemsExact(c, "out_of_policy", "merchant", "amount_usd", GT.outOfPolicy.map((o) => ({ merchant: o.merchant_name, cents: o.amount_cents }))), "observed"),
+      // Precision is required, not a bonus: inventing policy violations against named
+      // employees is a worse failure than missing one, and the answer set is size 1.
+      det("req.value", "required", `Reports exactly the ${GT.outOfPolicy[0]!.merchant_name} ${fmt(GT.outOfPolicy[0]!.amount_cents)} charge and nothing else`, (c) => structItemsExact(c, "out_of_policy", "merchant", "amount_usd", GT.outOfPolicy.map((o) => ({ merchant: o.merchant_name, cents: o.amount_cents }))), "observed"),
+      det("add.recall", "additional", `Flags the ${GT.outOfPolicy[0]!.merchant_name} charge at all`, (c) => structItemsContain(c, "out_of_policy", "merchant", "amount_usd", [{ merchant: GT.outOfPolicy[0]!.merchant_name, cents: GT.outOfPolicy[0]!.amount_cents }]), "observed"),
       det("add.policy_cited", "additional", "Cites the actual $500 meals cap value", (c) => answerMentionsAny(c, ["$500", "500"]), "observed"),
       ...baseAdditional(true),
       judged("add.faithful", "additional", "Explained the violation", `The answer identifies the ${GT.outOfPolicy[0]!.merchant_name} dinner of ${fmt(GT.outOfPolicy[0]!.amount_cents)} as out-of-policy and explains it breaches the meals policy (single transactions over $500 need approval).`),
@@ -241,7 +257,7 @@ export const GOLDEN: GoldenQuestion[] = [
       det("req.rationale", "required", "Every tool call carried a rationale", everyCallHasRationale, "invariant"),
       det("req.grounded", "required", "Grounded in a successful data tool call", (c) => (groundedIn(c, "execute_analyst_query").pass || groundedIn(c, "get_all_reduced_users").pass ? { pass: true, detail: "grounded" } : { pass: false, detail: "no successful users/analyst call" }), "observed"),
       det("req.value", "required", `Active users = ${GT.activeUserCount}`, (c) => structIntEquals(c, "active_users", GT.activeUserCount), "observed"),
-      det("add.avg_value", "additional", `Average per active user = ${fmt(GT.avgSpendPerActiveUserCents)}`, (c) => structScalarUsd(c, "avg_spend_per_active_user_usd", GT.avgSpendPerActiveUserCents, 0.01), "observed"),
+      det("add.avg_value", "additional", `Average per active user = ${fmt(GT.avgSpendPerActiveUserCents)}`, (c) => structScalarUsd(c, "avg_spend_per_active_user_usd", GT.avgSpendPerActiveUserCents, 100), "observed"),
       det("add.money_format", "additional", "Money formatted Ramp-style in prose", moneyFormatted, "observed"),
       det("add.converged", "additional", "Converged within budget", converged, "observed"),
       det("add.no_refetch", "additional", "No redundant re-fetches", noRedundantRefetch, "observed"),

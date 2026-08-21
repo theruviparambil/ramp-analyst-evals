@@ -34,8 +34,15 @@ export function parseStructured(finalAnswer: string): Record<string, unknown> | 
 
 const NO_JSON: CheckOutcome = { pass: false, detail: "no valid JSON answer block emitted" };
 
-function moneyClose(aCents: number, bCents: number, tolCents = 2, tolFrac = 0.0005): boolean {
-  return Math.abs(aCents - bCents) <= Math.max(tolCents, Math.abs(bCents) * tolFrac);
+/**
+ * The oracle is exact integer cents, so there is no measurement error to absorb:
+ * tolerance is absolute and stated in cents, never a fraction. A fractional
+ * tolerance silently scales with the magnitude of the answer -- the old 0.0005
+ * bought +/-$94.46 of slack on the $188,925.60 net-spend question, which is
+ * larger than most of the planted anomalies this suite is built to detect.
+ */
+function moneyClose(aCents: number, bCents: number, tolCents = 2): boolean {
+  return Math.abs(aCents - bCents) <= tolCents;
 }
 
 const asNumber = (v: unknown): number | null =>
@@ -50,6 +57,46 @@ const usdToCents = (v: unknown): number | null => {
 };
 const norm = (s: unknown): string => String(s ?? "").trim().toLowerCase();
 
+/**
+ * Entity names are compared for EQUALITY after normalization, not by substring.
+ * Substring matching in either direction is not a weak check, it is a broken
+ * one: `"a"` is a substring of every merchant in the fixture, so a one-letter
+ * answer used to score a correct vendor, department, spender and category.
+ *
+ * Normalization strips a trailing parenthetical ("Google Ads (Advertising)"),
+ * punctuation, corporate suffixes, and repeated whitespace, so an agent is not
+ * failed for cosmetics. Anything beyond that needs an explicit alias below.
+ */
+const CORPORATE_SUFFIX = /\b(inc|llc|ltd|corp|co|plc|gmbh|sa|nv)\b/g;
+
+const canonicalName = (v: unknown): string =>
+  norm(v)
+    .replace(/\s*\([^)]*\)\s*$/, "")
+    .replace(/[.,'"`]/g, "")
+    .replace(CORPORATE_SUFFIX, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+/** Renderings that are genuinely the same entity, not just formatted differently. */
+const NAME_ALIASES: ReadonlyArray<ReadonlyArray<string>> = [
+  ["amazon web services", "aws"],
+  ["google ads", "google adwords", "google advertising"],
+  ["delta air lines", "delta airlines"],
+];
+
+const ALIAS_INDEX: ReadonlyMap<string, number> = new Map(
+  NAME_ALIASES.flatMap((group, i) => group.map((name) => [name, i] as const)),
+);
+
+export function nameMatches(got: unknown, expected: string): boolean {
+  const a = canonicalName(got);
+  const b = canonicalName(expected);
+  if (a === "" || b === "") return false;
+  if (a === b) return true;
+  const ga = ALIAS_INDEX.get(a);
+  return ga !== undefined && ga === ALIAS_INDEX.get(b);
+}
+
 /** Resolve a dotted path ("spike.to_usd") within the parsed object. */
 function getPath(obj: Record<string, unknown>, path: string): unknown {
   return path.split(".").reduce<unknown>((acc, k) => (acc && typeof acc === "object" ? (acc as Record<string, unknown>)[k] : undefined), obj);
@@ -57,12 +104,12 @@ function getPath(obj: Record<string, unknown>, path: string): unknown {
 
 // ─── Scalar (dotted path) ─────────────────────────────────────────────────────
 
-export function structScalarUsd(ctx: CheckContext, path: string, expectedCents: number, tolFrac = 0.0005): CheckOutcome {
+export function structScalarUsd(ctx: CheckContext, path: string, expectedCents: number, tolCents = 2): CheckOutcome {
   const s = parseStructured(ctx.finalAnswer);
   if (!s) return NO_JSON;
   const cents = usdToCents(getPath(s, path));
   if (cents === null) return { pass: false, detail: `missing numeric "${path}"` };
-  return moneyClose(cents, expectedCents, 2, tolFrac)
+  return moneyClose(cents, expectedCents, tolCents)
     ? { pass: true, detail: `${path}=${(cents / 100).toFixed(2)} == ${(expectedCents / 100).toFixed(2)}` }
     : { pass: false, detail: `${path}=${(cents / 100).toFixed(2)} != expected ${(expectedCents / 100).toFixed(2)}` };
 }
@@ -78,10 +125,10 @@ export function structIntEquals(ctx: CheckContext, path: string, expected: numbe
 export function structStringIncludes(ctx: CheckContext, path: string, expected: string): CheckOutcome {
   const s = parseStructured(ctx.finalAnswer);
   if (!s) return NO_JSON;
-  const got = norm(getPath(s, path));
-  return got && (got.includes(norm(expected)) || norm(expected).includes(got))
-    ? { pass: true, detail: `${path}="${got}" ~ "${expected}"` }
-    : { pass: false, detail: `${path}="${got}" != "${expected}"` };
+  const raw = getPath(s, path);
+  return nameMatches(raw, expected)
+    ? { pass: true, detail: `${path}="${norm(raw)}" == "${expected}"` }
+    : { pass: false, detail: `${path}="${norm(raw)}" != "${expected}"` };
 }
 
 // ─── Top entry {name, value} ──────────────────────────────────────────────────
@@ -92,7 +139,7 @@ export function structTopEntry(ctx: CheckContext, obj: string, nameField: string
   const entry = getPath(s, obj);
   if (!entry || typeof entry !== "object") return { pass: false, detail: `missing object "${obj}"` };
   const e = entry as Record<string, unknown>;
-  const nameOk = norm(e[nameField]) !== "" && (norm(e[nameField]).includes(norm(expectedName)) || norm(expectedName).includes(norm(e[nameField])));
+  const nameOk = nameMatches(e[nameField], expectedName);
   const cents = usdToCents(e[valueField]);
   const valueOk = cents !== null && moneyClose(cents, expectedCents);
   if (nameOk && valueOk) return { pass: true, detail: `${expectedName} @ ${(expectedCents / 100).toFixed(2)}` };
@@ -151,11 +198,15 @@ function readItems(ctx: CheckContext, field: string, merchantKey: string, amount
 }
 
 function itemMatches(got: GotItem, exp: ExpectedItem): boolean {
-  if (!(got.merchant.includes(norm(exp.merchant)) || norm(exp.merchant).includes(got.merchant))) return false;
+  if (!nameMatches(got.merchant, exp.merchant)) return false;
   if (!moneyClose(got.cents, exp.cents)) return false;
   if (exp.dates && exp.dates.length) {
+    // Set EQUALITY, not containment. The fixture holds four Datadog charges of
+    // $8,400 in Q2 and only the (05-12, 05-15) pair is the double-charge, so a
+    // recall-only date check would accept an answer that dragged the two legit
+    // monthly charges in alongside it.
     const want = [...exp.dates].map((d) => d.slice(0, 10)).sort();
-    return want.every((d) => got.dates.includes(d));
+    return want.length === got.dates.length && want.every((d, i) => d === got.dates[i]);
   }
   return true;
 }
@@ -170,15 +221,39 @@ export function structItemsContain(ctx: CheckContext, field: string, merchantKey
     : { pass: false, detail: `missing: ${missing.map((m) => `${m.merchant} $${(m.cents / 100).toFixed(2)}`).join("; ") || "none reported"}` };
 }
 
+export interface ExactOptions {
+  /**
+   * A MATERIALITY FLOOR, in cents. Reported items below it are neither credited
+   * nor penalized.
+   *
+   * This exists because the fixture is generated, and generated spend collides:
+   * Q2 contains one coincidental pair of identical $35.93 Uber charges seven
+   * days apart alongside the planted $8,400 Datadog double-charge. That pair is
+   * REAL. An agent that surfaces it has observed the data correctly, and failing
+   * it for precision would be grading luck, not capability.
+   *
+   * Silently forgiving it would be worse, though: then a fabricated $1,200 item
+   * would be forgiven too. So the floor is explicit, stated to the agent in the
+   * question, and applied symmetrically. Materiality thresholds are how audit
+   * scopes work in this domain, which is why this is a rule rather than a patch.
+   */
+  ignoreBelowCents?: number;
+}
+
 /** The answer set equals the expected set exactly (recall AND precision). */
-export function structItemsExact(ctx: CheckContext, field: string, merchantKey: string, amountKey: string, expected: ExpectedItem[]): CheckOutcome {
+export function structItemsExact(ctx: CheckContext, field: string, merchantKey: string, amountKey: string, expected: ExpectedItem[], opts: ExactOptions = {}): CheckOutcome {
   const got = readItems(ctx, field, merchantKey, amountKey);
   if (got === null) return { pass: false, detail: `no valid JSON array "${field}"` };
-  const missing = expected.filter((e) => !got.some((g) => itemMatches(g, e)));
-  const spurious = got.filter((g) => !expected.some((e) => itemMatches(g, e)));
+  const floor = opts.ignoreBelowCents ?? 0;
+  // NaN (an unparseable amount) must not slip under the floor as "immaterial".
+  const material = got.filter((g) => !(Number.isFinite(g.cents) && Math.abs(g.cents) < floor));
+  const ignored = got.length - material.length;
+  const missing = expected.filter((e) => !material.some((g) => itemMatches(g, e)));
+  const spurious = material.filter((g) => !expected.some((e) => itemMatches(g, e)));
+  const note = ignored ? `, ${ignored} below the $${(floor / 100).toFixed(2)} materiality floor (ignored)` : "";
   return missing.length === 0 && spurious.length === 0
-    ? { pass: true, detail: `exact set of ${expected.length}` }
-    : { pass: false, detail: `missing ${missing.length}, spurious ${spurious.length}` };
+    ? { pass: true, detail: `exact set of ${expected.length}${note}` }
+    : { pass: false, detail: `missing ${missing.length}, spurious ${spurious.length}${note}` };
 }
 
 // ─── String set (vendor variants) ─────────────────────────────────────────────
