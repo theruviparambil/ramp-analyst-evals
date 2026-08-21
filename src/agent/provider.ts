@@ -83,6 +83,23 @@ export function resolveAgentModel(): Resolved | null {
       label: "bedrock",
     };
   }
+  // Explicit transport wins over key-presence order. Without this the branches
+  // below are a PRIORITY LIST, so a machine holding both an OpenAI and an
+  // Anthropic key can only ever run the OpenAI agent: the Anthropic run is
+  // unreachable except by unsetting a key in the shell. For a repo whose
+  // receipts are supposed to be reproducible from documented env alone, that is
+  // a silently-wrong-model bug, not an inconvenience.
+  const transport = env("AGENT_TRANSPORT");
+  if (transport === "anthropic") {
+    const key = env("ANTHROPIC_API_KEY");
+    if (!key) return null;
+    return { transport: "anthropic", model: override ?? "claude-sonnet-5", apiKey: key, baseUrl: env("ANTHROPIC_BASE_URL") ?? "https://api.anthropic.com", label: "anthropic" };
+  }
+  if (transport === "openai") {
+    const key = env("OPENAI_API_KEY");
+    if (!key) return null;
+    return { transport: "openai", model: override ?? "gpt-5.6-terra", apiKey: key, baseUrl: env("OPENAI_BASE_URL") ?? "https://api.openai.com/v1", label: "openai" };
+  }
   if (env("OPENROUTER_API_KEY")) {
     return { transport: "openai", model: override ?? "openai/gpt-5.1", apiKey: env("OPENROUTER_API_KEY")!, baseUrl: "https://openrouter.ai/api/v1", label: "openrouter" };
   }
@@ -354,7 +371,122 @@ function isReasoningModel(model: string): boolean {
   return /(^|\/)(o\d|gpt-5)/i.test(model);
 }
 
+/**
+ * Map the normalized conversation onto the Responses API `input` array.
+ *
+ * Unlike /chat/completions, tool traffic is NOT carried on message objects: a
+ * tool call is a top-level `function_call` item and its result is a top-level
+ * `function_call_output`, correlated by `call_id`. An assistant turn that both
+ * spoke and called tools therefore becomes several items, not one message.
+ */
+function toOpenAIResponsesInput(messages: Message[]): unknown[] {
+  const out: unknown[] = [];
+  for (const m of messages) {
+    switch (m.role) {
+      case "system":
+      case "user":
+        out.push({ role: m.role, content: m.content });
+        break;
+      case "assistant":
+        if (m.text) out.push({ role: "assistant", content: m.text });
+        for (const tc of m.toolCalls) {
+          out.push({ type: "function_call", call_id: tc.id, name: tc.name, arguments: JSON.stringify(tc.args) });
+        }
+        break;
+      case "tool":
+        out.push({ type: "function_call_output", call_id: m.toolCallId, output: m.content });
+        break;
+    }
+  }
+  return out;
+}
+
+/**
+ * Should this request go to /v1/responses instead of /chat/completions?
+ *
+ * It has to, for any current reasoning model that needs tools. gpt-5.6 rejects
+ * the combination outright on /chat/completions:
+ *
+ *   "Function tools with reasoning_effort are not supported for gpt-5.6-terra
+ *    in /v1/chat/completions. To use function tools, use /v1/responses or set
+ *    reasoning_effort to 'none'."
+ *
+ * Omitting reasoning_effort does not help, because the model's default is not
+ * 'none'. The other branch of that error message is a trap for an eval: setting
+ * 'none' would benchmark a reasoning model with its reasoning switched off, and
+ * publishing that next to a model running normally would be a rigged
+ * comparison, not a cheap workaround.
+ *
+ * Gateways are excluded by host, since OpenRouter and friends expose
+ * /chat/completions only. OPENAI_API_STYLE forces either path.
+ */
+export function usesResponsesApi(model: string, baseUrl: string, hasTools: boolean): boolean {
+  const forced = env("OPENAI_API_STYLE");
+  if (forced === "responses") return true;
+  if (forced === "chat") return false;
+  if (!hasTools) return false;
+  if (!/(^|\.)api\.openai\.com$/i.test(safeHost(baseUrl))) return false;
+  return isReasoningModel(model);
+}
+
+function safeHost(url: string): string {
+  try {
+    return new URL(url).host;
+  } catch {
+    return "";
+  }
+}
+
+async function chatOpenAIResponses(r: Resolved, messages: Message[], tools: ToolSpec[], maxTokens: number, signal: AbortSignal): Promise<TransportResult> {
+  const body: Record<string, unknown> = {
+    model: r.model,
+    input: toOpenAIResponsesInput(messages),
+    // Reasoning tokens come out of this budget, so the floor mirrors the
+    // /chat/completions path rather than starving the visible answer.
+    max_output_tokens: Math.max(maxTokens, 4000),
+  };
+  // Left at the model's DEFAULT unless asked. Picking an effort here would
+  // quietly set the difficulty of every published comparison; the receipt
+  // records what was used either way.
+  const effort = env("OPENAI_REASONING_EFFORT");
+  if (effort) body.reasoning = { effort };
+  if (tools.length > 0) {
+    // Responses flattens the function schema: no nested `function` object.
+    body.tools = tools.map((t) => ({ type: "function", name: t.name, description: t.description, parameters: t.parameters }));
+    body.tool_choice = "auto";
+  }
+  const res = await fetch(`${r.baseUrl.replace(/\/$/, "")}/responses`, {
+    method: "POST",
+    signal,
+    headers: { "content-type": "application/json", authorization: `Bearer ${r.apiKey}` },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new TransportError(`openai ${res.status}: ${(await res.text()).slice(0, 300)}`, res.status, res.status >= 500 || res.status === 429);
+  const json = (await res.json()) as {
+    output?: Array<{ type?: string; name?: string; arguments?: string; call_id?: string; content?: Array<{ type?: string; text?: string }> }>;
+    usage?: { input_tokens?: number; output_tokens?: number };
+  };
+  const text: string[] = [];
+  const toolCalls: ToolCallRequest[] = [];
+  for (const item of json.output ?? []) {
+    if (item.type === "function_call" && item.name) {
+      toolCalls.push({ id: item.call_id ?? "", name: item.name, args: safeJson(item.arguments ?? "{}") });
+    } else if (item.type === "message") {
+      for (const c of item.content ?? []) if (c.text) text.push(c.text);
+    }
+    // "reasoning" items carry no user-visible content and are deliberately dropped.
+  }
+  return {
+    turn: { text: text.join("").trim(), toolCalls },
+    prompt: json.usage?.input_tokens ?? 0,
+    completion: json.usage?.output_tokens ?? 0,
+  };
+}
+
 async function chatOpenAI(r: Resolved, messages: Message[], tools: ToolSpec[], maxTokens: number, signal: AbortSignal): Promise<TransportResult> {
+  if (usesResponsesApi(r.model, r.baseUrl, tools.length > 0)) {
+    return chatOpenAIResponses(r, messages, tools, maxTokens, signal);
+  }
   const reasoning = isReasoningModel(r.model);
   const body: Record<string, unknown> = {
     model: r.model,
@@ -422,15 +554,32 @@ function toAnthropicMessages(messages: Message[]): { system: string; messages: u
   return { system: systemParts.join("\n\n"), messages: out };
 }
 
+/**
+ * Does this Anthropic model still accept `temperature`?
+ *
+ * The Claude 5 family does not: it returns
+ *   400 invalid_request_error "`temperature` is deprecated for this model."
+ * and rejects the whole request. Sending it unconditionally made every judge
+ * call fail, which surfaced as `add.faithful 0/0 n/a` rather than as an error,
+ * because a judge failure is recorded as a SKIPPED criterion. A run would have
+ * completed, looked healthy, and silently contained no judged verdicts at all.
+ *
+ * Matched by family rather than by an allowlist of ids, so the next Claude 5
+ * model does not reintroduce it.
+ */
+export function anthropicAcceptsTemperature(model: string): boolean {
+  return !/\b(opus|sonnet|haiku|fable)-5\b/i.test(model);
+}
+
 async function chatAnthropic(r: Resolved, messages: Message[], tools: ToolSpec[], maxTokens: number, signal: AbortSignal): Promise<TransportResult> {
   const { system, messages: amsgs } = toAnthropicMessages(messages);
   const body: Record<string, unknown> = {
     model: r.model,
     max_tokens: maxTokens,
-    temperature: 0,
     system,
     messages: amsgs,
   };
+  if (anthropicAcceptsTemperature(r.model)) body.temperature = 0;
   if (tools.length > 0) {
     body.tools = tools.map((t) => ({ name: t.name, description: t.description, input_schema: t.parameters }));
   }

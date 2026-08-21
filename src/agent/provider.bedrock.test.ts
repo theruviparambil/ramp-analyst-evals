@@ -4,7 +4,7 @@
  * env resolution, and that an OpenAI agent + Bedrock judge reads as cross-family.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createJudgeClient, createProviderClient, judgeSharesFamilyWithAgent, resolveAgentModel, resolveJudgeModel, toBedrockRequest, type BedrockRequestBody, modelFamily, differentFromAgentForTest } from "./provider.js";
+import { createJudgeClient, createProviderClient, judgeSharesFamilyWithAgent, resolveAgentModel, resolveJudgeModel, toBedrockRequest, type BedrockRequestBody, modelFamily, differentFromAgentForTest, anthropicAcceptsTemperature } from "./provider.js";
 import type { Message, ToolSpec } from "./types.js";
 
 const ENV_KEYS = [
@@ -273,3 +273,57 @@ describe("judge fallback", () => {
     expect(modelFamily(differentFromAgentForTest("claude-sonnet-5"))).toBe("anthropic");
   });
 });
+
+describe("AGENT_TRANSPORT selects the agent explicitly", () => {
+  const saved = { ...process.env };
+  afterEach(() => {
+    process.env = { ...saved };
+  });
+
+  it("reaches the Anthropic agent even when an OpenAI key is present", () => {
+    // Without an explicit transport the branches are a priority list, so the
+    // Anthropic run is unreachable on a machine holding both keys.
+    process.env.OPENAI_API_KEY = "sk-test-openai";
+    process.env.ANTHROPIC_API_KEY = "sk-test-anthropic";
+    process.env.AGENT_TRANSPORT = "anthropic";
+    delete process.env.AGENT_MODEL;
+    const r = resolveAgentModel();
+    expect(r?.transport).toBe("anthropic");
+    expect(modelFamily(r?.model ?? "")).toBe("anthropic");
+  });
+
+  it("reaches the OpenAI agent explicitly too", () => {
+    process.env.OPENAI_API_KEY = "sk-test-openai";
+    process.env.ANTHROPIC_API_KEY = "sk-test-anthropic";
+    process.env.AGENT_TRANSPORT = "openai";
+    delete process.env.AGENT_MODEL;
+    const r = resolveAgentModel();
+    expect(r?.transport).toBe("openai");
+    expect(modelFamily(r?.model ?? "")).toBe("openai");
+  });
+
+  it("returns null rather than silently falling through when the named key is missing", () => {
+    process.env.ANTHROPIC_API_KEY = "sk-test-anthropic";
+    delete process.env.OPENAI_API_KEY;
+    delete process.env.OPENROUTER_API_KEY;
+    process.env.AGENT_TRANSPORT = "openai";
+    expect(resolveAgentModel()).toBeNull();
+  });
+})
+
+describe("anthropic temperature compatibility", () => {
+  it("omits temperature for the Claude 5 family, which rejects it outright", () => {
+    // 400 "`temperature` is deprecated for this model." killed every judge call,
+    // and a judge failure is recorded as a SKIPPED criterion, so the run looked
+    // healthy while containing no judged verdicts.
+    for (const m of ["claude-sonnet-5", "claude-opus-5", "claude-fable-5", "claude-haiku-5"]) {
+      expect(anthropicAcceptsTemperature(m)).toBe(false);
+    }
+  });
+
+  it("still sends it for models that accept it", () => {
+    for (const m of ["claude-sonnet-4-6", "claude-haiku-4-5-20251001", "us.anthropic.claude-sonnet-4-6"]) {
+      expect(anthropicAcceptsTemperature(m)).toBe(true);
+    }
+  });
+})

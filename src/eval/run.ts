@@ -191,6 +191,12 @@ async function main(): Promise<void> {
   }
   console.log("");
 
+  // Checked BEFORE a single API call. Running it after the samples meant paying
+  // for the whole run and then refusing to write the artifacts, which is the
+  // most expensive possible moment to discover a name collision.
+  await mkdir(args.outDir, { recursive: true });
+  await guardExistingReceipt(args, agent.label, questions.length);
+
   const samples: Sample[] = [];
   for (let i = 0; i < args.samples; i++) {
     if (args.samples > 1) console.log(`[ sample ${i + 1}/${args.samples} ]`);
@@ -256,7 +262,6 @@ async function main(): Promise<void> {
   console.log(`  total ≈ ${fmtUsd(totalCost)}`);
 
   await mkdir(args.outDir, { recursive: true });
-  await guardExistingReceipt(args, agent.label, questions.length);
   const meta = {
     startedAt: new Date().toISOString(), model: agent.label, judge: judge?.label ?? null, judgeSharesFamily: judge ? judgeSharesFamilyWithAgent() : null,
     // The families the flag above was derived from, so a reader can audit it
