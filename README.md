@@ -193,6 +193,64 @@ the point is the harness produces a real, per-question signal to compare on at a
 (Cost note: the agents price very differently: GPT-5.1 $1.25/$10, Claude $3/$15,
 GPT-5.5 $5/$30 per 1M in/out, so the cost row reflects rate as much as token use.)
 
+## What this eval cannot tell you
+
+Written after an outside methodology review. Everything below is recomputable
+from the committed receipts, and none of it was disclosed before.
+
+**Nine of the twelve questions are at a perfect ceiling for all three agents.**
+5/5 across the board on q01, q02, q03, q05, q07, q08, q09, q11, q12. Only q04,
+q06 and q10 vary at all, and q10 is retracted above as my own ambiguous
+question. So the head-to-head above rests on **two discriminating questions**,
+not twelve, and 135 of its 180 runs carry no information. The gpt-5.1 vs
+gpt-5.5 difference is 2 runs out of 60 (Fisher exact p = 0.76), with the 0.9
+bar happening to fall between 53/60 and 55/60. One flipped run on q06 would put
+gpt-5.1 at exactly 0.900 and it would clear.
+
+**The domain docs hand over the answer query for most of those ceiling
+questions.** The agent is required to fetch the catalog and table docs before it
+can query, and `src/ramp/docs.ts` ships `starter_queries` that are the solution
+verbatim:
+
+```sql
+SELECT COUNT(*) AS active_users FROM analyst.user_dim WHERE user_dim.is_active
+SELECT SUM(spend_facts.amount) AS net_spend FROM analyst.spend_facts
+SELECT md.normalized_merchant_name AS vendor, SUM(sf.amount) AS total ... ORDER BY total DESC
+SELECT SUM(ap_bill_facts.amount) AS open_payables ... WHERE payment_status = 'OPEN'
+```
+
+That first one answers q12 including `active_users`, which is the exact JSON key
+`structIntEquals` grades. The system prompt also names q05's planted trap
+verbatim (`"Delta Air Lines" vs "Delta Airlines"`) and enumerates the anomaly
+patterns the questions ask about. This is defensible as ecological validity,
+since real production prompts do carry house conventions and Ramp's real docs do
+carry the un-normalized caveat, but it changes what the pass rate measures. The
+ceiling is where the leak is; the two questions that discriminate are two of the
+few with no method handed over.
+
+**The date filter is never exercised.** All 207 transactions fall between
+2026-04-01 and 2026-06-27. Zero rows sit outside Q2. Nine questions ask for a Q2
+total, and an agent that omits the `WHERE transaction_date BETWEEN ...` clause
+entirely gets the identical answer on every one. Wrong or missing period filters
+are among the most common real analyst-agent bugs and this eval is blind to them
+in the too-wide direction.
+
+**One ADDITIONAL criterion can never pass.** `add.driver` is 0/5 for all three
+agents, 0/15 total. `add.top_vendors` is 0/5, 0/5, 2/5. Because `additionalPass`
+is an AND over every evaluated criterion, a permanently-failing check zeroes its
+question's ADDITIONAL tier for every model regardless of the answer, which is
+part of why that tier reads lower than the work deserves.
+
+**What the numbers do support:** on one synthetic fixture, with a prompt that
+names several of the planted patterns, three frontier agents stay read-only,
+follow the docs handshake, and get 88-100% of structured values right. They
+differ measurably on duplicate detection and policy grounding. That is the
+claim. A model ranking is not.
+
+Fixing any of this means changing the prompt, the docs, or the fixture, which
+invalidates every receipt above and costs a paid re-run of three agents. Stated
+rather than silently patched, and queued rather than done.
+
 ## The test that matters: structured grading
 
 Substring grading is a coinflip. The planted duplicate is a Datadog charge of
