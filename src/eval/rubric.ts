@@ -118,12 +118,14 @@ export interface EvalSummary {
   total: number;
   /** Questions dropped for an infra error (timeout/abort/5xx): reported, not scored. */
   errored: number;
-  requiredTierPassRate: number;
-  additionalTierPassRate: number;
+  /** null when nothing was scored: no questions, or all of them infra-errored. */
+  requiredTierPassRate: number | null;
+  /** null when nothing was scored. */
+  additionalTierPassRate: number | null;
   requiredTierPassed: number;
   additionalTierPassed: number;
   /** Per-criterion pass rate across questions (evaluated only). */
-  criterionPassRates: Array<{ id: string; tier: string; nature: string; evaluated: number; passed: number; rate: number }>;
+  criterionPassRates: Array<{ id: string; tier: string; nature: string; evaluated: number; passed: number; rate: number | null }>;
 }
 
 export function summarize(allScores: QuestionScore[]): EvalSummary {
@@ -151,21 +153,35 @@ export function summarize(allScores: QuestionScore[]): EvalSummary {
     nature: rec.nature,
     evaluated: rec.evaluated,
     passed: rec.passed,
-    rate: rec.evaluated ? rec.passed / rec.evaluated : 1,
+    rate: rec.evaluated ? rec.passed / rec.evaluated : null,
   }));
 
   return {
     total,
     errored,
-    requiredTierPassRate: total ? requiredTierPassed / total : 1,
-    additionalTierPassRate: total ? additionalTierPassed / total : 1,
+    // null, not 1, when nothing was scored. `: 1` meant a run where every
+    // question hit an infra error reported "REQUIRED tier 100%" and exited 0.
+    // Reproduced live with a bad model name: 12 questions, 12 infra errors,
+    // gate PASS. A permanent transport failure (401, 400, model_not_found) does
+    // exactly that, so a broken key published a green build.
+    requiredTierPassRate: total ? requiredTierPassed / total : null,
+    additionalTierPassRate: total ? additionalTierPassed / total : null,
     requiredTierPassed,
     additionalTierPassed,
     criterionPassRates,
   };
 }
 
-/** The CI gate: the REQUIRED tier must clear the bar. ADDITIONAL is headroom, never gated. */
+/**
+ * The CI gate: the REQUIRED tier must clear the bar. ADDITIONAL is headroom,
+ * never gated.
+ *
+ * Fails closed. Nothing scored means nothing passed, and any infra error means
+ * the denominator is smaller than the question set, so a run that mostly failed
+ * to execute cannot report a rate over the survivors and call it green.
+ */
 export function passesGate(summary: EvalSummary, bar: number): boolean {
+  if (summary.requiredTierPassRate === null) return false;
+  if (summary.total === 0) return false;
   return summary.requiredTierPassRate >= bar;
 }

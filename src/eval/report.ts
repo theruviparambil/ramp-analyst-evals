@@ -6,7 +6,7 @@
 import type { Trajectory } from "../agent/types.js";
 import type { EvalSummary, QuestionScore } from "./rubric.js";
 
-const pct = (x: number): string => `${(x * 100).toFixed(0)}%`;
+const pct = (x: number | null): string => (x === null ? "n/a" : `${Math.round(x * 100)}%`);
 const mark = (b: boolean): string => (b ? "PASS" : "FAIL");
 
 export function renderTable(scores: QuestionScore[], summary: EvalSummary): string {

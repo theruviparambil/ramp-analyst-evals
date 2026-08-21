@@ -87,7 +87,7 @@ async function runSample(agent: LLMClient, judge: LLMClient | undefined, questio
   return { scores, summary: summarize(scores), transcripts };
 }
 
-const pct = (x: number) => `${(x * 100).toFixed(0)}%`;
+const pct = (x: number | null) => (x === null ? "n/a" : `${(x * 100).toFixed(0)}%`);
 
 async function main(): Promise<void> {
   loadDotenv();
@@ -123,9 +123,15 @@ async function main(): Promise<void> {
 
   // Aggregate. The deterministic REQUIRED tier is reported as a single mean; the
   // model-dependent ADDITIONAL tier is reported as mean + range (variance control).
-  const reqRates = samples.map((s) => s.summary.requiredTierPassRate);
-  const addRates = samples.map((s) => s.summary.additionalTierPassRate);
-  const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
+  // A sample where nothing scored contributes null, not 1. Averaging it in as a
+  // perfect score is how a run whose questions all infra-errored reported 100%.
+  const reqRates = samples
+    .map((s) => s.summary.requiredTierPassRate)
+    .filter((x): x is number => x !== null);
+  const addRates = samples
+    .map((s) => s.summary.additionalTierPassRate)
+    .filter((x): x is number => x !== null);
+  const mean = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
   const meanRequired = mean(reqRates);
   const meanAdditional = mean(addRates);
   const allScores = samples.flatMap((s) => s.scores);
@@ -145,8 +151,10 @@ async function main(): Promise<void> {
     for (const p of perQuestion) console.log(`  ${p.id.padEnd(24)} required ${p.requiredPass}/${p.samples}   additional ${p.additionalPass}/${p.samples}${p.errored ? `   (${p.errored} infra-error, excluded)` : ""}`);
     console.log("");
     console.log("Across samples:");
-    console.log(`  REQUIRED tier:   ${pct(meanRequired)} mean  (range ${pct(Math.min(...reqRates))}–${pct(Math.max(...reqRates))} over ${args.samples})`);
-    console.log(`  ADDITIONAL tier: ${pct(meanAdditional)} mean  (range ${pct(Math.min(...addRates))}–${pct(Math.max(...addRates))} over ${args.samples})`);
+    const range = (xs: number[]) =>
+      xs.length ? `(range ${pct(Math.min(...xs))}–${pct(Math.max(...xs))} over ${args.samples})` : "(no scored samples)";
+    console.log(`  REQUIRED tier:   ${pct(meanRequired)} mean  ${range(reqRates)}`);
+    console.log(`  ADDITIONAL tier: ${pct(meanAdditional)} mean  ${range(addRates)}`);
     console.log(`  Infra errors excluded: ${erroredTotal} of ${samples.length * questions.length} runs${erroredTotal ? ". Raise AGENT_TIMEOUT_MS and re-run for a clean result" : ""}\n`);
   } else {
     console.log("\n" + renderTable(last.scores, last.summary) + "\n");
@@ -192,7 +200,11 @@ async function main(): Promise<void> {
   console.log(`Artifacts written to ${args.outDir}/ (results.jsonl, summary.json, transcripts.md)`);
 
   if (!passesGate({ ...mergedSummary, requiredTierPassRate: meanRequired }, args.requiredBar)) {
-    console.error(`\nEVAL GATE: REQUIRED tier ${pct(meanRequired)} < bar ${pct(args.requiredBar)}. Failing.`);
+    const why =
+      meanRequired === null
+        ? `nothing was scored (${erroredTotal} infra ${erroredTotal === 1 ? "error" : "errors"})`
+        : `REQUIRED tier ${pct(meanRequired)} < bar ${pct(args.requiredBar)}`;
+    console.error(`\nEVAL GATE: ${why}. Failing.`);
     process.exit(1);
   }
   console.log(`\nEVAL GATE: REQUIRED tier ${pct(meanRequired)} ≥ bar ${pct(args.requiredBar)}. Pass.`);
