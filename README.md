@@ -1,5 +1,11 @@
 # ramp-analyst-evals
 
+![Tests](https://img.shields.io/badge/tests-255-brightgreen)
+![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue)
+![Golden set](https://img.shields.io/badge/golden%20set-22%20questions-blue)
+![Offline](https://img.shields.io/badge/test%20suite-runs%20offline-brightgreen)
+![License](https://img.shields.io/badge/license-MIT-blue)
+
 An agentic finance analyst built on Ramp's public agent-tool surface, plus the eval harness that proves, or disproves, that it works.
 
 The agent answers spend questions the way an analyst would: it reads the data
@@ -20,242 +26,117 @@ documented stub (see below) for pointing the same tool calls at Ramp's real MCP 
 > surface this project is built on. No proprietary Ramp data or code is included: the schemas are
 > reproduced from Ramp's public spec, and all data is synthetic.
 
-## Results (real run)
-
-> **Note (2026-08-21):** the runs below cover the original twelve questions. The
-> harder six (q13-q18) and a tightened rubric landed after these were recorded
-> and have not been run against a live model yet. Re-grading these stored answers
-> under the new rubric changes no verdict, so the numbers stand as reported, but
-> they do not yet include the harder set.
-
-12 questions, run **5 times each** so the model-dependent tier reports a mean and
-a range, not a single wobbling number. Agent `gpt-5.1` (OpenAI); judge **Claude
-Sonnet 4.6 on AWS Bedrock, a genuinely different model family from the agent**;
-`RAMP_MODE=fixture`.
-
-| | |
-|---|---|
-| **REQUIRED tier** (the SLA) | **88% mean**, range **83–100%** over 5 runs |
-| **ADDITIONAL tier** (headroom) | **47% mean**, range **33–58%** |
-| Cost | agent **$1.19** (OpenAI, 198 calls) + judge **$0.13** (Bedrock, 60 calls) = **$1.32** |
-| Offline tests (CI) | **146 passing**, keyless |
-| Eval gate @ REQUIRED ≥ 0.9 | **fails at 88%**, on purpose (see below) |
-
-Per-question, how often each tier fully passed across the 5 runs:
-
-```
-q01_total_net_spend      required 5/5   additional 5/5
-q02_top_vendor           required 5/5   additional 2/5
-q03_spend_by_department  required 5/5   additional 4/5
-q04_duplicate_charge     required 3/5   additional 0/5   ← the hard one
-q05_vendor_variant       required 5/5   additional 5/5
-q06_out_of_policy        required 1/5   additional 0/5   ← the agent often gives up
-q07_mom_spike            required 5/5   additional 0/5
-q08_top_spender          required 5/5   additional 5/5
-q09_software_total       required 5/5   additional 0/5
-q10_refunds              required 4/5   additional 1/5
-q11_open_bills           required 5/5   additional 4/5
-q12_active_users         required 5/5   additional 2/5
-```
-
-**The eval gate fails, and that's the deliverable.** The harness is set to require
-a 0.9 REQUIRED-tier pass rate; `gpt-5.1` lands at 0.88. It won't wave the agent
-through, because the agent has two real misses:
-
-- **q04 (duplicates)**: on several runs the model groups by *exact same date* and
-  reports "no duplicates," missing the planted Datadog double-charge three days
-  apart. This is the single most important test in the repo (see below).
-- **q06 (out-of-policy)**: on 4 of 5 runs the model answers the policy question in
-  the abstract and never queries `spend_facts.policy_status`, so it fails to name
-  the Nobu charge. `req.grounded` catches the give-up (it dropped to 93%).
-
-A green 100% would be the suspicious result. What held perfectly are the two
-surface-enforced invariants: read-only 60/60 and rationale-on-every-call 60/60.
-
-> **Caveat on that read-only 60/60.** Those receipts were generated in July,
-> before `execute_analyst_query` actually enforced anything. The tool registry
-> exposed no write tool, so no *tool* could mutate state, and that much was
-> true. But model-authored SQL went straight to DuckDB, so a `DELETE` inside a
-> query would have run. Enforcement landed later, in two layers: a single-pass
-> SQL guard, and `enable_external_access = false` plus `lock_configuration =
-> true` on the connection once the fixture is loaded. `read-only-execution.test.ts`
-> now runs each attack through the real database and asserts the row count is
-> unchanged, because the guard's own unit tests all checked the guard in
-> isolation and passed while it let `SELECT '--' AS x; DELETE FROM
-> analyst.spend_facts` through. No committed transcript shows an agent
-> attempting anything of the sort, but 12 of 60 trajectories are committed, so
-> the July runs cannot rule it out.
-
-```
-[REQ] (inv) req.read_only         60/60  100%   never called a write tool
-[REQ] (inv) req.rationale         60/60  100%   every tool call had a rationale
-[REQ] (obs) req.grounded          56/60   93%   4 give-ups without a query (q06)
-[REQ] (obs) req.value             54/60   90%   the structured value check
-[ADD] (obs) add.faithful          52/60   87%   the cross-family Claude judge, non-gating
-[ADD] (obs) add.aggregated_in_sql 51/55   93%   aggregated in SQL, not a raw scan
-[ADD] (obs) add.variants           5/5   100%   named both Delta spellings
-[ADD] (obs) add.money_format      37/60   62%   terser JSON-first prose skips $ formatting
-[ADD] (obs) add.policy_cited       0/5     0%   stopped citing the $500 cap in prose
-```
-
-`(inv)` marks **surface-enforced invariants**: checks that cannot fail while the
-tool surface behaves: write tools are never handed to the agent, and the surface
-rejects any call missing a rationale. They're guarantees of the harness, not
-evidence about the model. Everything else is `(obs)`: observed behavior that
-genuinely depends on what the agent chose to do, including grounding and the
-catalog/docs path checks, which fail when the agent answers without ever landing
-a query. Labeling them apart keeps the report from dressing one up as the other. The additional tier dropped from an earlier build because
-asking the agent for a machine-checkable JSON block made its prose terser, a real
-tradeoff, and exactly the kind of thing you want measured rather than guessed.
-
-Reproduce the whole scoring machinery with no key in ~30 seconds:
+## Quickstart (no API key)
 
 ```bash
 npm install
-npm test              # 208 tests, fully offline (scripted model + real DuckDB)
+npm test              # 255 tests, fully offline (scripted model + real DuckDB)
 npm run ground-truth  # print the planted patterns and their exact values
 ```
 
-Run the agent live with one key:
+Every grading rule, every planted trap, and the oracle that defines the right
+answers are exercised without a key or a network call.
 
-```bash
-cp .env.example .env             # one of OPENROUTER / OPENAI / ANTHROPIC
-npm run demo                     # first 6 questions (cheap)
-npm run eval -- --samples=5      # all 18, variance-controlled, + the eval gate
-npm run ask -- "How much did we spend with Delta in Q2?"
+**Start here:** [the result](#the-result)
+· [the trap that earned its keep](#the-trap-that-earned-its-keep)
+· [what this eval cannot tell you](#what-this-eval-cannot-tell-you)
+· [the golden set](#the-golden-set)
+· [reproduce it](#reproduce-the-run)
+· [architecture](#architecture)
+
+---
+
+## The result
+
+Two frontier agents, 22 questions, **3 samples each**, each graded by a
+cross-family judge. Both receipts carry the same `gradingHash`, so this compares
+models rather than rubric versions.
+
+| | gpt-5.6-terra | claude-sonnet-5 |
+| --- | --- | --- |
+| REQUIRED tier | **95.5%** (95.5 / 95.5 / 95.5) | **97.0%** (100 / 95.5 / 95.5) |
+| ADDITIONAL tier | **40.9%** (31.8 / 45.5 / 45.5) | **34.8%** (36.4 / 36.4 / 31.8) |
+| judged by | claude-sonnet-5 | gpt-5.6-terra |
+| cost | $2.29 | $5.15 |
+
+**That is not a ranking.** A 1.5-point REQUIRED gap is one question across three
+samples. What the run shows is that the two models fail in *different shapes*:
+
+| question | gpt-5.6-terra | claude-sonnet-5 |
+| --- | --- | --- |
+| q09 software total | **0/3** | 3/3 |
+| q19 vendor reconciliation | 3/3 | **2/3** |
+| q20 travel definition | 3/3 | **2/3** |
+| the other 19 | 3/3 | 3/3 |
+
+Terra has a **deterministic blind spot**: q09 fails every single time. Sonnet 5
+has none, but is **less consistent**, dropping questions it usually gets right.
+One sample would have called that a ranking. Three show it is a difference in
+kind.
+
+## The trap that earned its keep
+
+Q2 holds one $18,000 charge to a merchant missing from `merchant_dim`. The
+domain docs tell an agent to join that table and group by
+`normalized_merchant_name` for canonical vendor totals, and that inner join
+silently drops the row: no error, no empty result, just a total short by $18,000
+that still looks completely plausible.
+
+**Following the documentation is what produces the wrong answer.**
+
+The sharpest evidence is one model across two questions:
+
+```
+q19  "does total spend reconcile to the sum by vendor?"     3/3 PASS
+     -> finds the $18,000 gap, names the orphaned record
+
+q09  "how much did we spend on software?"                   0/3 FAIL
+     -> "grouped using canonical vendor names from merchant_dim"
+     -> reports $44,198.00 against a true $62,198.00
 ```
 
-## Three agents, head to head
+Same model, same data, same $18,000. It locates the orphan when asked to look,
+and loses it silently when it is not. That is not a knowledge gap. It is the
+absence of a reason to check, and it is what a demo cannot surface.
 
-Point the same 12 questions at three frontier agents and the harness
-discriminates. Each is graded **cross-family**: no model grades its own family.
-The two OpenAI agents share the *same* Bedrock Claude judge, so they're directly
-comparable; the required tier is deterministic (structured-value matching against
-the oracle), so the agent comparison is judge-independent regardless.
+The trap lives in the **fixture**, not in a question, which is why it caught
+q09: a question written before the trap existed.
 
-| | GPT-5.1 · Claude judge | GPT-5.5 · Claude judge | Claude Sonnet 4.6 · GPT-5.1 judge |
-|---|---|---|---|
-| REQUIRED tier | 88% (83–100%), **fails** 0.9 | **92%** (92–92%), **clears** | **100%** (100–100%), **clears** |
-| ADDITIONAL tier | 47% (33–58%) | **60%** (50–75%) | 42% (33–50%) |
-| Agent cost (5×12) | $1.19 | $6.59 | $4.57 |
-| Judge cost | $0.13 | $0.12 | $0.06 |
-
-Required-tier pass frequency per question (passes out of 5 samples):
-
-```
-                         GPT-5.1   GPT-5.5   Claude 4.6
-q01_total_net_spend        5/5       5/5        5/5
-q02_top_vendor             5/5       5/5        5/5
-q03_spend_by_department    5/5       5/5        5/5
-q04_duplicate_charge       3/5       5/5        5/5     ← time-gapped duplicate
-q05_vendor_variant         5/5       5/5        5/5
-q06_out_of_policy          1/5       4/5        5/5     ← policy-query case
-q07_mom_spike              5/5       5/5        5/5
-q08_top_spender            5/5       5/5        5/5
-q09_software_total         5/5       5/5        5/5
-q10_refunds                4/5       1/5        5/5     ← my question was ambiguous, see below
-q11_open_bills             5/5       5/5        5/5
-q12_active_users           5/5       5/5        5/5
-```
-
-**Was "Claude beats GPT-5.1" a real gap or a recency artifact? Mostly recency.**
-GPT-5.5, OpenAI's current frontier, clears the same 0.9 gate GPT-5.1 fails, and
-closes almost all of the difference on the two anomaly questions: it catches the
-time-gapped Datadog duplicate every time (q04, 3/5 → 5/5) and the out-of-policy
-Nobu charge on 4 of 5 runs (q06, 1/5 → 4/5, citing the $500 cap). So the honest
-reading is **newer beats older, and the harness tracks that across model
-generations**, not "Claude beats OpenAI." Both current frontier models clear the
-required tier; the older GPT-5.1 doesn't.
-
-One thing survives the recency control: Claude has the cleanest required tier
-(100% vs 92%) and is the only agent that never misses q06. GPT-5.5 leads the
-softer ADDITIONAL tier (60%), mostly on money formatting.
-
-**Retracted: "GPT-5.5 regressed on refunds."** An earlier version of this README
-read q10 (4/5 → 1/5) as a capability regression. It was not. It was my bug, and
-the committed transcript says so plainly:
-
-> _"I need gross spend, net spend, total refunds, and refund count for the
-> current quarter **(Q3 2026)**"_ ... _"There were no card transactions recorded
-> this quarter... This comes from `analyst.spend_facts` for **Q3 2026**."_
-
-q10 was the only question of the twelve that said **"this quarter"** with no date
-anchor, while every other question named Q2 explicitly. And the catalog the agent
-is required to read first reports `computed_at: 2026-07-01T00:00:00Z` — the first
-day of Q3 2026. So the harness told the agent the data was current as of the
-first day of Q3, then asked about "this quarter", then graded against Q2. GPT-5.5
-resolved the reference against the freshness date it had been given, queried an
-empty range, and reported $0.00 correctly. GPT-5.1 assumed Q2 and was scored
-right for a reason the question did not supply.
-
-The question now reads "in Q2 2026 (April 1 - June 30)" like the other eleven.
-The receipts above predate that fix, so the q10 column measures question
-ambiguity rather than model capability and should be read as noise. Publishing a
-model-capability claim off an ambiguous question is exactly the failure this
-harness exists to catch, and it took an outside reader to catch it here.
-
-This is a snapshot on one fixture, not a league table. But it's reproducible, and
-the point is the harness produces a real, per-question signal to compare on at all.
-(Cost note: the agents price very differently: GPT-5.1 $1.25/$10, Claude $3/$15,
-GPT-5.5 $5/$30 per 1M in/out, so the cost row reflects rate as much as token use.)
+A second data-level trap works the same way. An employee transferred department
+mid-quarter, so `user_dim` (current department) and `spend_facts` (department at
+time of charge) disagree. Attributing spend through the wrong one reports Sales
+at $36,623.79 against a true $14,981.38, off by 144%.
 
 ## What this eval cannot tell you
 
-Written after an outside methodology review. Everything below is recomputable
-from the committed receipts, and none of it was disclosed before.
+All of it recomputable from the committed receipts in `out/`.
 
-**Nine of the twelve questions are at a perfect ceiling for all three agents.**
-5/5 across the board on q01, q02, q03, q05, q07, q08, q09, q11, q12. Only q04,
-q06 and q10 vary at all, and q10 is retracted above as my own ambiguous
-question. So the head-to-head above rests on **two discriminating questions**,
-not twelve, and 135 of its 180 runs carry no information. The gpt-5.1 vs
-gpt-5.5 difference is 2 runs out of 60 (Fisher exact p = 0.76), with the 0.9
-bar happening to fall between 53/60 and 55/60. One flipped run on q06 would put
-gpt-5.1 at exactly 0.900 and it would clear.
+**The REQUIRED tier is near its ceiling.** 19 of 22 questions are 3/3 for both
+models, so the comparison rests on **three** discriminating questions, not 22.
+An earlier version of this suite had every frontier model at 100%, which is why
+the harder set exists; the ceiling has moved, not gone.
 
-**The domain docs hand over the answer query for most of those ceiling
-questions.** The agent is required to fetch the catalog and table docs before it
-can query, and `src/ramp/docs.ts` ships `starter_queries` that are the solution
-verbatim:
+**n=3.** Enough to separate "fails every time" from "fails sometimes", which is
+the distinction the result rests on. Not enough to rank two models 1.5 points
+apart, and this README does not.
 
-```sql
-SELECT COUNT(*) AS active_users FROM analyst.user_dim WHERE user_dim.is_active
-SELECT SUM(spend_facts.amount) AS net_spend FROM analyst.spend_facts
-SELECT md.normalized_merchant_name AS vendor, SUM(sf.amount) AS total ... ORDER BY total DESC
-SELECT SUM(ap_bill_facts.amount) AS open_payables ... WHERE payment_status = 'OPEN'
-```
+**One fixture, one company, one quarter.** 220 synthetic transactions with
+planted anomalies. Nothing here establishes how these models behave on real
+spend data at real scale.
 
-That first one answers q12 including `active_users`, which is the exact JSON key
-`structIntEquals` grades. The system prompt also names q05's planted trap
-verbatim (`"Delta Air Lines" vs "Delta Airlines"`) and enumerates the anomaly
-patterns the questions ask about. This is defensible as ecological validity,
-since real production prompts do carry house conventions and Ramp's real docs do
-carry the un-normalized caveat, but it changes what the pass rate measures. The
-ceiling is where the leak is; the two questions that discriminate are two of the
-few with no method handed over.
+**The models ran under different reasoning defaults.** Terra reasons by default;
+Claude's extended thinking is off unless requested. Both ran at their API
+defaults, which is what a developer gets out of the box, but it is not a
+controlled comparison of reasoning budgets.
 
-**The date filter is never exercised.** All 207 transactions fall between
-2026-04-01 and 2026-06-27. Zero rows sit outside Q2. Nine questions ask for a Q2
-total, and an agent that omits the `WHERE transaction_date BETWEEN ...` clause
-entirely gets the identical answer on every one. Wrong or missing period filters
-are among the most common real analyst-agent bugs and this eval is blind to them
-in the too-wide direction.
+**The ADDITIONAL tier is an AND** over every criterion for a question, so one
+failing check zeroes that question's additional score regardless of the rest.
+Read it as a strict conjunction, not partial credit.
 
-**One ADDITIONAL criterion can never pass.** `add.driver` is 0/5 for all three
-agents, 0/15 total. `add.top_vendors` is 0/5, 0/5, 2/5. Because `additionalPass`
-is an AND over every evaluated criterion, a permanently-failing check zeroes its
-question's ADDITIONAL tier for every model regardless of the answer, which is
-part of why that tier reads lower than the work deserves.
-
-**What the numbers do support:** on one synthetic fixture, with a prompt that
-names several of the planted patterns, three frontier agents stay read-only,
-follow the docs handshake, and get 88-100% of structured values right. They
-differ measurably on duplicate detection and policy grounding. That is the
-claim. A model ranking is not.
-
-Fixing any of this means changing the prompt, the docs, or the fixture, which
-invalidates every receipt above and costs a paid re-run of three agents. Stated
-rather than silently patched, and queued rather than done.
+**What the numbers do support:** on one synthetic fixture, two 2026 frontier
+agents stay read-only, follow the docs handshake, and get 95 to 97% of
+structured values right, while both are vulnerable to a data-quality defect the
+documented method walks them into. That is the claim.
 
 ## The test that matters: structured grading
 
@@ -290,107 +171,44 @@ now fails REQUIRED, as it should. There's a regression test pinning exactly this
 (`src/eval/golden.test.ts`). This is what makes the oracle load-bearing instead of
 decorative.
 
-## One full transcript
+## The golden set
 
-`q02_top_vendor`, from [`out/transcripts.md`](out/transcripts.md). Note the
-handshake: the agent reads the catalog and domain docs *before* it writes SQL,
-because the tool surface returns `docs_required` otherwise, the same prerequisite
-Ramp's Core enforces.
+22 questions in two groups.
 
-````
-Q: Which vendor did we spend the most with in Q2, and how much?
+**q01-q12** cover totals, group-bys, refunds, bills and the user directory, four
+of them targeting planted anomalies. Near-saturated for 2026 frontier models,
+and kept as the regression floor.
 
-1. get_analyst_catalog
-   "Understand which analyst.* tables are available before querying Q2 vendor spend."
-2. get_analyst_spend_facts_domain_docs
-   "Review spend_facts docs to know how to aggregate vendor spend for Q2."
-3. get_analyst_table_domain_docs  (analyst.merchant_dim)
-   "Need merchant_dim docs to group Q2 card spend by normalized vendor name."
-4. execute_analyst_query
-   "Compute Q2 (2026-04-01 to 2026-06-30) net card spend by normalized vendor
-    and pick the top vendor by spend."
-   SQL:
-     SELECT md.normalized_merchant_name AS vendor, SUM(sf.amount) AS net_spend
-     FROM analyst.spend_facts sf
-     JOIN analyst.merchant_dim md ON sf.merchant_uuid = md.merchant_uuid
-     WHERE sf.transaction_date >= DATE '2026-04-01'
-       AND sf.transaction_date <= DATE '2026-06-30'
-     GROUP BY md.normalized_merchant_name
-     ORDER BY net_spend DESC LIMIT 1
-   → { "vendor": "Google Ads", "net_spend": 42500.00 }
+**q13-q22** test judgment rather than SQL. Each is built so a competent model
+reaches a defensible *wrong* answer by doing the obvious thing:
 
-Answer:
-   The vendor you spent the most with in Q2 was Google Ads, with net card spend
-   of $42,500.00 between 2026-04-01 and 2026-06-30 …
-   ```json
-   {"top_vendor": {"name": "Google Ads", "spend_usd": 42500}}
-   ```
-````
+| | the trap |
+| --- | --- |
+| q13 typical purchase | mean $1,098.21 vs median $52.71, a 21x gap. Leading with the mean is correct arithmetic and useless advice. |
+| q14 refund scope | 3 refunds exist, one outside the quarter. Catches the period filter applied everywhere, or nowhere. |
+| q15 program reach | Meals and Travel **tie** at 4 departments. Naming one of two tied answers fails. |
+| q16 Q2 cash out | $25,750 of OPEN bills are commitments, not outflow. |
+| q17 over budget | **Unanswerable.** No budget column exists anywhere. Passed only by declining, and naming nothing. |
+| q18 inactive spenders | Answerable, and the answer is the **empty set**. Shares q17's schema so neither is given away by shape. |
+| q19 reconciliation | The documented join drops $18,000. |
+| q20 travel | Two defensible readings $6,750 apart. Graded on internal consistency, not one blessed number. |
+| q21 false premise | "Marketing's spend dropped in June" is untrue. It quadrupled. |
+| q22 concentration | Four dependent steps, and it inherits the department-transfer trap. |
 
-That answer clears every REQUIRED criterion (structured value, read-only,
-grounded) and the reasoning-path checks. The ADDITIONAL tier is where the headroom
-lives: even a clean answer like this doesn't land every advanced criterion on every
-run (q02's additional tier passed 2 of 5).
+REQUIRED correctness is a structured-value check against the oracle. ADDITIONAL
+mixes deterministic checks with a binary faithfulness judge.
 
-## Why an eval, not a demo
+## Reproduce the run
 
-You can get an agent to *look* right on a Tuesday. Proving it's right, and staying
-right after the next prompt tweak, is a different job. A few ideas this repo leans
-on, in the shared vocabulary of the teams that do this well:
+```bash
+cp .env.example .env
+npm run eval -- --samples=3 --tag=my-run --out=out/my-run
+```
 
-**Grade the reasoning path, not just the answer.** A correct number can come from a
-lucky guess or a write that happened to not matter. So the harness asserts on the
-trajectory: did the agent consult the catalog before querying, did it read docs for
-every table it referenced, did it aggregate in SQL instead of scanning raw
-transactions, did it avoid redundant re-fetches. The last two are genuine
-discriminators: a lazy agent fails them even with the right number.
-
-**Two binary tiers.** REQUIRED = the SLA (right value, read-only,
-grounded). ADDITIONAL = headroom (cite the SQL, catch the variant, flag the anomaly,
-format money the Ramp way). Reported separately; only REQUIRED gates. Binary
-pass/fail, never a fuzzy 0.7, because binary converges faster for judges and is what
-a κ-validation pass expects.
-
-**Invariant vs observed.** Some checks can't fail while the surface behaves. Calling
-those "the model did well" is misleading, so they're tagged and reported apart from
-real observed behavior.
-
-**Variance control.** The model-dependent tier is run N times and reported as a mean
-with a range (`--samples=5`). A single number that swings ±8 points between runs
-isn't a measurement.
-
-**Infra failures aren't capability failures.** A slow reasoning model whose call
-times out, or a transient 5xx, is retried; if it still fails it's flagged an infra
-error and *excluded from the pass-rate*, not scored as a wrong answer. (The
-per-request timeout is configurable (`AGENT_TIMEOUT_MS`) precisely because a fixed
-timeout that marks slow models wrong is a fairness bug. This surfaced comparing
-GPT-5.5: a 90s cap was aborting its reasoning calls and mis-scoring them.)
-
-**A judge you don't over-trust, and can swap for a different family.** A model
-grades exactly one criterion, `add.faithful`, on the non-gating ADDITIONAL tier.
-Everything that gates, the entire REQUIRED tier, is deterministic: structured
-value matching against the oracle, plus rule checks (read-only, grounded,
-rationale). No model grades the pass/fail that matters, so judge bias can't reach
-the gate by construction. On top of that, the judge itself is swappable: the repo
-ships three judge transports: OpenAI, Anthropic, and **AWS Bedrock**
-(the Converse API over a Bearer token, no SDK), so the judge can be a genuinely
-different family from the agent in one env var:
-`JUDGE_TRANSPORT=bedrock JUDGE_MODEL=us.anthropic.claude-sonnet-4-6`. **The committed
-run above is judged by Claude Sonnet 4.6 on Bedrock** grading a GPT-5.1 agent,
-cross-family, not self-grading. This repo runs a light cross-judge check, not a κ
-validation: re-scoring the committed answers with a second, same-family `gpt-4.1`
-judge agrees with Claude on `add.faithful` **12 of 12** (committed at
-[`out/judge-agreement.json`](out/judge-agreement.json), regenerate with
-`npm run judge-agreement`), and the additional-tier mean is the same 47% either
-way, so the one judged criterion isn't an artifact of a single judge. The full
-inter-rater-agreement validation (Cohen's / Fleiss' κ against human labels) is a
-separate method, **not run in this repo**; it lives in the companion repo,
-[veriva-eval](https://github.com/theruviparambil/veriva-eval).
-
-**Two gates, kept honest.** The 146 offline tests are the CI gate: they run keyless
-on every push ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)). The *eval*
-gate is the `process.exit` in `npm run eval`; it needs a key because it has to
-generate real trajectories, so it runs on demand, not in CI.
+Every run writes a `summary.json` carrying `harness.gradingHash`: a digest of
+the nine files that decide pass or fail, the fixture and its oracle included.
+**Two runs are comparable only if that hash matches.** The runner refuses to
+overwrite a receipt written under a different model, tag, or question count.
 
 ## The fixture is the ground truth
 
@@ -419,35 +237,6 @@ The fixture reproduces Ramp's real gotchas on purpose: transaction amounts are
 formatted strings (`"$6,750.00"`), bill amounts are numbers; `merchant_name` is
 un-normalized, so a naive `GROUP BY merchant_name` splits Delta and under-reports it
 (q05 is exactly that trap).
-
-## The golden set
-
-18 questions in two groups. The first twelve: four target the planted patterns,
-the rest cover totals, group-bys, refunds, bills, and the user directory. The
-last six (q13-q18) test judgment rather than SQL, because the first twelve are
-near-saturated: a 2026 frontier agent scores 100% on their REQUIRED tier, so
-they no longer rank anything. Each of the six is built so a competent model
-reaches a defensible WRONG answer by doing the obvious thing: reporting a mean
-on an 18x-skewed distribution, naming one of two tied answers, counting unpaid
-commitments as cash out, or answering a question the data cannot support.
-
-REQUIRED correctness is a structured-value check against the oracle; ADDITIONAL
-mixes deterministic checks with the faithfulness judge.
-
-| # | Question | Expected | Structured `req.value` · notable ADDITIONAL |
-|---|---|---|---|
-| q01 | Total net card spend | `$188,925.60` | scalar `net_spend_usd` |
-| q02 | Top vendor | Google Ads `$42,500.00` | `{name, spend}` · cite, format |
-| q03 | Spend by department | Engineering `$92,005.81` | top `{name, spend}` · full 6-dept vector |
-| q04 | Duplicate charges | Datadog `$8,400.00`, 05-12 & 05-15 | set contains Datadog · exact set, both dates |
-| q05 | Total Delta spend | `$4,387.00` (both spellings) | scalar `combined` · names both variants |
-| q06 | Out-of-policy txns | Nobu `$6,750.00` | set contains Nobu · exact set, cites $500 |
-| q07 | Biggest MoM increase | Advertising, June `$50,000.00` | `spike.category` + `to_usd` · increase, driver |
-| q08 | Top spender | Priya Nair `$85,112.86` | `{name, spend}` |
-| q09 | SaaS/software total | `$35,598.00` | scalar · names a top vendor |
-| q10 | Refunds, gross vs net | net `$188,925.60`, 2 refunds | `net_usd` + `refund_count` · gross, refund total |
-| q11 | Open bills owed | `$25,750.00` (2 bills) | scalar · count, open-vs-paid |
-| q12 | Active users + avg spend | 13 active; avg `$14,532.74` | `active_users` · avg per active user |
 
 ## Architecture
 
@@ -489,7 +278,7 @@ src/
     scripted.ts           offline test double
     agent.ts / system-prompt.ts   the read-only, self-correcting loop
   eval/
-    golden.ts             the 18 questions + tier criteria
+    golden.ts             the 22 questions + tier criteria
     structured.ts         structured-answer matching vs the oracle
     checkers.ts           deterministic checkers
     trajectory.ts         reasoning-path + efficiency discriminators

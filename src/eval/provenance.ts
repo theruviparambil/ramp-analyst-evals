@@ -68,7 +68,12 @@ export function gradingHash(): string {
 
 export function harnessProvenance(): HarnessProvenance {
   const commit = git(["rev-parse", "--short", "HEAD"]);
-  const status = git(["status", "--porcelain"]);
+  // --untracked-files=no, because a run creates its OWN artifact directory
+  // before this is called: with untracked files counted, every single run
+  // self-reported dirty:true and the flag carried no information at all.
+  // `dirty` means the tracked source differs from the commit, which is the
+  // only sense in which the harness is not the commit it claims to be.
+  const status = git(["status", "--porcelain", "--untracked-files=no"]);
   return {
     commit,
     dirty: status === null ? null : status.length > 0,
