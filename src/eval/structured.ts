@@ -232,6 +232,22 @@ export function structMatchesDeclaredBasis(
     : { pass: false, detail: `declared "${chosen.basis}" but reported ${(cents / 100).toFixed(2)}, which is not that basis (${(chosen.cents / 100).toFixed(2)})` };
 }
 
+/**
+ * Every name present must come from the allowed set; the set need not be
+ * covered. For "did you invent anything?" questions, where an empty answer and
+ * a correct partial answer are both fine but a fabricated one is not.
+ */
+export function structStringSubsetOf(ctx: CheckContext, field: string, allowed: string[]): CheckOutcome {
+  const s = parseStructured(ctx.finalAnswer);
+  if (!s) return NO_JSON;
+  const arr = getPath(s, field);
+  if (!Array.isArray(arr)) return { pass: false, detail: `missing array "${field}"` };
+  const invented = arr.filter((g) => !allowed.some((a) => nameMatches(g, a)));
+  return invented.length === 0
+    ? { pass: true, detail: arr.length ? `all ${arr.length} name(s) are real` : "named none" }
+    : { pass: false, detail: `not supported by the data: ${invented.map((x) => String(x)).join(", ")}` };
+}
+
 // ─── Top entry {name, value} ──────────────────────────────────────────────────
 
 export function structTopEntry(ctx: CheckContext, obj: string, nameField: string, valueField: string, expectedName: string, expectedCents: number): CheckOutcome {

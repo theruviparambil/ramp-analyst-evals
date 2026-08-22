@@ -270,8 +270,24 @@ export interface ProviderClient extends LLMClient {
   readonly usage: Usage;
 }
 
+/**
+ * The output-token budget every agent transport gets, uniformly.
+ *
+ * It has to be uniform or the comparison is rigged. Before this, the default was
+ * 1200 and only the OpenAI paths raised it to 4000, so Anthropic ran with 3.3x
+ * less room. On 2026-08-22 that truncated claude-sonnet-5 mid-sentence on q04
+ * and q19, cutting off the JSON block after it had already reasoned to the
+ * right answer (its q19 prose correctly found the $18,000 gap and named the
+ * orphaned Vanta row). Both scored as required failures, and the run would have
+ * published "Sonnet 5 is worse" when the harness was silently cutting it off.
+ *
+ * A verbose model is not a wrong model. Budget is a property of the harness, so
+ * it is set in one place and applied to every transport.
+ */
+export const AGENT_MAX_OUTPUT_TOKENS = 4000;
+
 function buildClient(resolved: Resolved, opts: ProviderOptions): ProviderClient {
-  const maxTokens = opts.maxTokens ?? 1200;
+  const maxTokens = opts.maxTokens ?? AGENT_MAX_OUTPUT_TOKENS;
   const timeoutMs = opts.timeoutMs ?? 240_000; // reasoning models are legitimately slow
   const maxRetries = opts.maxRetries ?? 2;
   const backoffMs = opts.backoffMs ?? 800;
@@ -441,9 +457,8 @@ async function chatOpenAIResponses(r: Resolved, messages: Message[], tools: Tool
   const body: Record<string, unknown> = {
     model: r.model,
     input: toOpenAIResponsesInput(messages),
-    // Reasoning tokens come out of this budget, so the floor mirrors the
-    // /chat/completions path rather than starving the visible answer.
-    max_output_tokens: Math.max(maxTokens, 4000),
+    // Reasoning tokens come out of this budget, so it must not be tight.
+    max_output_tokens: maxTokens,
   };
   // Left at the model's DEFAULT unless asked. Picking an effort here would
   // quietly set the difficulty of every published comparison; the receipt
@@ -492,7 +507,7 @@ async function chatOpenAI(r: Resolved, messages: Message[], tools: ToolSpec[], m
     model: r.model,
     // Reasoning models only accept the default temperature; give them more room
     // for hidden reasoning tokens.
-    max_completion_tokens: reasoning ? Math.max(maxTokens, 4000) : maxTokens,
+    max_completion_tokens: maxTokens,
     messages: toOpenAIMessages(messages),
   };
   if (!reasoning) body.temperature = 0;

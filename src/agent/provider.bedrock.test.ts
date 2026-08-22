@@ -4,8 +4,9 @@
  * env resolution, and that an OpenAI agent + Bedrock judge reads as cross-family.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createJudgeClient, createProviderClient, judgeSharesFamilyWithAgent, resolveAgentModel, resolveJudgeModel, toBedrockRequest, type BedrockRequestBody, modelFamily, differentFromAgentForTest, anthropicAcceptsTemperature } from "./provider.js";
+import { createJudgeClient, createProviderClient, judgeSharesFamilyWithAgent, resolveAgentModel, resolveJudgeModel, toBedrockRequest, type BedrockRequestBody, modelFamily, differentFromAgentForTest, anthropicAcceptsTemperature, AGENT_MAX_OUTPUT_TOKENS } from "./provider.js";
 import type { Message, ToolSpec } from "./types.js";
+import { readFileSync } from "node:fs";
 
 const ENV_KEYS = [
   "JUDGE_TRANSPORT", "JUDGE_MODEL", "JUDGE_BASE_URL", "AWS_BEARER_TOKEN_BEDROCK", "JUDGE_API_KEY",
@@ -325,5 +326,22 @@ describe("anthropic temperature compatibility", () => {
     for (const m of ["claude-sonnet-4-6", "claude-haiku-4-5-20251001", "us.anthropic.claude-sonnet-4-6"]) {
       expect(anthropicAcceptsTemperature(m)).toBe(true);
     }
+  });
+})
+
+describe("output-token budget is uniform across transports", () => {
+  it("is a single exported constant, not a per-transport floor", () => {
+    // It was 1200 by default with only the OpenAI paths raising it to 4000, so
+    // Anthropic ran with 3.3x less room and claude-sonnet-5 was truncated
+    // mid-answer on q04 and q19 after reasoning correctly. A verbose model is
+    // not a wrong model, and budget is a property of the harness.
+    expect(AGENT_MAX_OUTPUT_TOKENS).toBeGreaterThanOrEqual(4000);
+  });
+
+  it("no transport re-raises the budget on its own", () => {
+    // A Math.max(...) inside one transport is exactly how the asymmetry
+    // reappears without anyone noticing.
+    const src = readFileSync(new URL("./provider.ts", import.meta.url), "utf8");
+    expect(src).not.toMatch(/Math\.max\(\s*maxTokens/);
   });
 })

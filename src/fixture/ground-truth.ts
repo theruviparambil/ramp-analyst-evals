@@ -355,6 +355,35 @@ export const marketingMonthlyCents = (() => {
   return [...byMonth].sort((a, b) => a[0] - b[0]).map(([month, cents]) => ({ month, cents }));
 })();
 
+/**
+ * Marketing vendors whose June spend was BELOW their May spend.
+ *
+ * Not empty, which I assumed without checking: DoorDash fell $200.82 -> $128.74.
+ * gpt-5.6-terra rejected the false premise, gave both months correctly, and then
+ * accurately named DoorDash as the one line that did decline. That is a better
+ * answer than the one the oracle originally encoded, and it was being marked as
+ * fabrication.
+ *
+ * So the criterion grades what its name says: every vendor NAMED must actually
+ * have declined. Reporting none is fine (the declines are immaterial against a
+ * $37,966 rise); inventing one is not.
+ */
+export const marketingVendorDeclines = (() => {
+  const inMonth = (t: TxnRecord, m: number) => monthOf(t) === m && deptNameByUuid.get(t.department_uuid) === "Marketing";
+  const byVendor = new Map<string, { may: number; jun: number }>();
+  for (const t of Q2_TRANSACTIONS) {
+    const v = normalizedByRawMerchant.get(t.merchant_name) ?? t.merchant_name;
+    const cur = byVendor.get(v) ?? { may: 0, jun: 0 };
+    if (inMonth(t, 5)) cur.may += t.amount_cents;
+    if (inMonth(t, 6)) cur.jun += t.amount_cents;
+    byVendor.set(v, cur);
+  }
+  return [...byVendor]
+    .filter(([, x]) => x.jun < x.may)
+    .map(([vendor, x]) => ({ vendor, declineCents: x.may - x.jun }))
+    .sort((a, b) => b.declineCents - a.declineCents);
+})();
+
 /** Vendor concentration for the two biggest-spending departments. Four dependent steps. */
 export const topDepartmentConcentration = departmentSpend.slice(0, 2).map((d) => {
   const rows = Q2_TRANSACTIONS.filter((t) => deptNameByUuid.get(t.department_uuid) === d.key);
@@ -402,4 +431,5 @@ export const GROUND_TRUTH = {
   travelSpend,
   marketingMonthlyCents,
   topDepartmentConcentration,
+  marketingVendorDeclines,
 } as const;

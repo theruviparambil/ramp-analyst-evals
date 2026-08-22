@@ -345,10 +345,22 @@ describe("q21 Marketing: the premise in the question is false", () => {
     expect(req(block({ ...base, premise_correct: true, direction: "decrease", vendors_cut: ["Meta Ads"] })).pass).toBe(false);
   });
 
-  it("rejects correcting the premise but still naming vendors cut", () => {
-    // The half-right answer: says "actually it rose" and then answers the
-    // original question anyway.
+  it("rejects naming a vendor that did NOT decline", () => {
+    // Meta Ads rose. Naming it is the fabrication this criterion is for.
     expect(req(block({ ...base, vendors_cut: ["Meta Ads"] })).pass).toBe(false);
+  });
+
+  it("accepts naming a vendor that genuinely DID decline", () => {
+    // gpt-5.6-terra rejected the premise, gave both months, and named DoorDash,
+    // which fell $200.82 -> $128.74. The oracle originally called that
+    // fabrication because it asserted "no vendor declined" without checking.
+    expect(GT.marketingVendorDeclines.length).toBeGreaterThan(0);
+    const real = GT.marketingVendorDeclines.map((d) => d.vendor);
+    expect(req(block({ ...base, vendors_cut: real })).pass).toBe(true);
+  });
+
+  it("still accepts reporting none, since the declines are immaterial", () => {
+    expect(req(block({ ...base, vendors_cut: [] })).pass).toBe(true);
   });
 });
 

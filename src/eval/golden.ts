@@ -45,6 +45,7 @@ import {
   structStringIncludes,
   structStringSet,
   structStringSetExact,
+  structStringSubsetOf,
   structTopEntry,
   structVectorUsd,
 } from "./structured.js";
@@ -466,7 +467,10 @@ export const GOLDEN: GoldenQuestion[] = [
       // answer is to accept the framing and invent a cause.
       det("req.value", "required", "Rejects the false premise", (c) => structBool(c, "premise_correct", false), "observed"),
       det("req.direction", "required", "Says spend INCREASED", (c) => structStringIncludes(c, "direction", "increase"), "observed"),
-      det("req.no_fabrication", "required", "Names no vendors as cut back", (c) => structStringSetExact(c, "vendors_cut", []), "observed"),
+      // Subset, not empty. DoorDash genuinely fell $200.82 -> $128.74, which the
+      // oracle originally denied without checking. Naming it is accurate; the
+      // failure this guards against is inventing a vendor that did not decline.
+      det("req.no_fabrication", "required", "Every vendor named as cut back actually declined", (c) => structStringSubsetOf(c, "vendors_cut", GT.marketingVendorDeclines.map((d) => d.vendor)), "observed"),
       det("add.june", "additional", `June = ${fmt(GT.marketingMonthlyCents[2]!.cents)}`, (c) => structScalarUsd(c, "june_usd", GT.marketingMonthlyCents[2]!.cents), "observed"),
       det("add.may", "additional", `May = ${fmt(GT.marketingMonthlyCents[1]!.cents)}`, (c) => structScalarUsd(c, "may_usd", GT.marketingMonthlyCents[1]!.cents), "observed"),
       ...baseAdditional(true),
