@@ -1,6 +1,6 @@
 # ramp-analyst-evals
 
-![Tests](https://img.shields.io/badge/tests-255-brightgreen)
+![Tests](https://img.shields.io/badge/tests-258-brightgreen)
 ![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue)
 ![Golden set](https://img.shields.io/badge/golden%20set-22%20questions-blue)
 ![Offline](https://img.shields.io/badge/test%20suite-runs%20offline-brightgreen)
@@ -30,7 +30,7 @@ documented stub (see below) for pointing the same tool calls at Ramp's real MCP 
 
 ```bash
 npm install
-npm test              # 255 tests, fully offline (scripted model + real DuckDB)
+npm test              # 258 tests, fully offline (scripted model + real DuckDB)
 npm run ground-truth  # print the planted patterns and their exact values
 ```
 

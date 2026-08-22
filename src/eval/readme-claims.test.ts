@@ -13,7 +13,7 @@
  */
 
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -174,5 +174,46 @@ describe("README claims: the harness", () => {
     });
     const actual = listed.trim().split("\n").filter((l) => l.includes(" > ")).length;
     expect(Number(badge)).toBe(actual);
+  });
+});
+
+/**
+ * Stale receipts are worse than absent ones.
+ *
+ * `out/v2-sonnet5` reported 81.8% from a run whose Anthropic transport was
+ * capped at 1200 output tokens against OpenAI's 4000, truncating answers after
+ * they had already reasoned correctly. It carried the CURRENT gradingHash,
+ * because the fix was in the transport rather than in a grading file, so it
+ * looked comparable to the real result while being invalid.
+ *
+ * Anything published at the top level of out/ is therefore required to be
+ * current. History lives in out/archive/, which says why it is not comparable.
+ */
+describe("published receipts are current", () => {
+  const OUT = resolve(ROOT, "out");
+
+  it("every top-level receipt carries the current gradingHash", () => {
+    const dirs = readdirSync(OUT, { withFileTypes: true })
+      .filter((e) => e.isDirectory() && e.name !== "archive")
+      .map((e) => e.name);
+    expect(dirs.length).toBeGreaterThan(0);
+    for (const d of dirs) {
+      const m = JSON.parse(readFileSync(resolve(OUT, d, "summary.json"), "utf8")) as {
+        harness?: { gradingHash?: string };
+      };
+      expect(m.harness?.gradingHash, `out/${d} was graded by a different rubric`).toBe(gradingHash());
+    }
+  });
+
+  it("no loose summary.json sits at the top of out/", () => {
+    // An earlier layout put one run's artifacts directly in out/, where they
+    // read as "the" result long after they stopped being it.
+    expect(existsSync(resolve(OUT, "summary.json"))).toBe(false);
+  });
+
+  it("the archive explains why its contents are not comparable", () => {
+    const doc = readFileSync(resolve(OUT, "archive", "README.md"), "utf8");
+    expect(doc.replace(/\*/g, '')).toMatch(/not comparable/i);
+    expect(doc).toMatch(/gradingHash/);
   });
 });
