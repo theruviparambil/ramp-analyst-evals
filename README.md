@@ -210,6 +210,14 @@ the nine files that decide pass or fail, the fixture and its oracle included.
 **Two runs are comparable only if that hash matches.** The runner refuses to
 overwrite a receipt written under a different model, tag, or question count.
 
+The two published receipts record `harness.dirty: true`. That is an artifact of
+a bug fixed after they were written: `dirty` counted untracked files, and a run
+creates its own `out/<tag>/` directory before provenance is captured, so every
+run self-reported dirty and the flag carried no information. It now ignores
+untracked files. No grading file changed between the commit those receipts
+record and now, which is why their `gradingHash` still matches the current one,
+and the hash is the field comparability rests on.
+
 ## The fixture is the ground truth
 
 One synthetic company, **Vela Robotics**: 15 users across 6 departments, **207**
